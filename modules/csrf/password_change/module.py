@@ -16,7 +16,7 @@ EVIL_PASSWORD = "pwned-by-csrf"
 class PasswordChange(Vuln):
     info = {
         "name": "改密码处的 CSRF",
-        "author": ["vuln4all"],
+        "author": ["guaidao2"],
         "cwe": "CWE-352",
         "owasp": "A01:2021 - Broken Access Control",
         "description": (

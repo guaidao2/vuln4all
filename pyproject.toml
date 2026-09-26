@@ -9,6 +9,7 @@ description = "模块化 Web 漏洞靶场 —— 丢一个模块进去，就多�
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
+authors = [{ name = "guaidao2" }]
 dependencies = [
     "Flask>=2.2",
 ]

@@ -50,23 +50,65 @@ cleanup() {
 trap cleanup EXIT
 
 step "0. 起靶场"
+
+# 先把自己上一次留下的残局收掉（上一次被 kill -9 时 trap 不会跑）。
+# 这一步要在端口检查之前：否则自己留的进程会被当成"别人占着端口"而硬失败。
 if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
   echo "  端口上已经有本脚本起的进程，先停掉"
   cleanup
 fi
+
+# 端口上如果另有其人，直接停下 —— 否则 curl 会去问那个"别人"，
+# 而我们拿它的返回体做断言，跑出一堆跟本次改动无关的假结论。
+# 这种事真的发生过一次：旧服务占着 8800，新进程绑不上就死了，
+# 结果 16 项全红，看着像代码坏了，其实是测错了对象。
+if command -v ss >/dev/null 2>&1; then
+  if ss -ltn 2>/dev/null | grep -qE ":$PORT([[:space:]]|$)"; then
+    bad "端口 $PORT 已经被占了，先清掉再来。占用者："
+    ss -ltnp 2>/dev/null | grep -E ":$PORT([[:space:]]|$)" || true
+    exit 1
+  fi
+else
+  echo "  警告：这台机器上没有 ss，没法检查 $PORT 是否已被占用"
+  echo "        如果端口上恰好有别的东西在应答，本次结果不可信"
+fi
+
 nohup python3 -m vuln4all run --port "$PORT" >"$LOG" 2>&1 &
 echo $! >"$PIDFILE"
+SERVERPID=$(cat "$PIDFILE")
+
 for _ in $(seq 1 40); do
   curl -s -o /dev/null "$BASE/" && break
   sleep 0.25
 done
-if curl -s -o /dev/null "$BASE/"; then
-  ok "靶场起来了（pid $(cat "$PIDFILE")，日志 $LOG）"
-else
+
+if ! curl -s -o /dev/null "$BASE/"; then
   bad "靶场起不来，看 $LOG"
   tail -30 "$LOG"
   exit 1
 fi
+
+# 确认应答的确实是我们刚起的那个进程，而不是端口上捡来的别人
+if ! kill -0 "$SERVERPID" 2>/dev/null; then
+  bad "我们起的进程 $SERVERPID 已经死了，但 $PORT 上有人在应答 —— 说明在测别人"
+  exit 1
+fi
+if [ -r "/proc/$SERVERPID/cmdline" ]; then
+  if ! tr '\0' ' ' <"/proc/$SERVERPID/cmdline" | grep -q "vuln4all"; then
+    bad "PID $SERVERPID 的命令行对不上，不敢往它上面做断言"
+    exit 1
+  fi
+else
+  echo "  警告：读不到 /proc/$SERVERPID/cmdline（挂载了 hidepid？），跳过命令行核对"
+fi
+
+# 再确认一下拿到的是本项目的页面，而不是同端口上的另一个服务
+if ! curl -s "$BASE/" | grep -q "vuln4all"; then
+  bad "$PORT 上应答的东西不是 vuln4all"
+  exit 1
+fi
+
+ok "靶场起来了（pid $SERVERPID，日志 $LOG）"
 
 step "1. 清单页与体检页"
 body=$(curl -s "$BASE/")
@@ -79,6 +121,27 @@ expect_has "清单页露出攻击者站点入口" "/evil-site/" "$body"
 
 code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/__vuln4all/status")
 expect_code "体检页可访问" "$code" "200"
+
+step "1b. 前端"
+body=$(curl -s "$BASE/")
+expect_has "清单页有搜索框"          'id="v4a-search"' "$body"
+expect_has "清单页有分类筛选按钮"    'class="chip' "$body"
+expect_has "清单页有分类区块"        'class="cat"' "$body"
+expect_has "页脚标了作者"            "guaidao2" "$body"
+
+body=$(curl -s "$BASE/v/sqli/login_bypass/")
+expect_has "题目页有标题卡片"        'class="hero-card"' "$body"
+expect_has "题目页有提示折叠区"      "提示" "$body"
+expect_has "题目页有答案折叠区"      "答案" "$body"
+expect_has "题目页标了出题人"        "guaidao2" "$body"
+expect_has "题目页有重置按钮"        "重置这题" "$body"
+
+css=$(curl -s -w '\n%{http_code}' "$BASE/__vuln4all/static/style.css")
+expect_has "样式表内容有新设计令牌"  "--accent" "$css"
+expect_has "样式表里带上了 HTTP 状态" "200" "$css"
+# 筛选 JS 靠 element.hidden 收卡片；作者来源的 .card{display:flex} 会压过
+# UA 的 [hidden]{display:none}，所以样式表里必须显式重申一次
+expect_has "样式表里有 [hidden] 兜底规则" "[hidden]" "$css"
 
 step "2. SQLi —— 登录绕过"
 body=$(curl -s -X POST "$BASE/v/sqli/login_bypass/" \
@@ -229,6 +292,42 @@ ec=$?
 expect_no "doctor 不再把 templates/ 误报成缺 module.py" "templates 这个目录下" "$out"
 expect_no "doctor 不再提 __pycache__" "__pycache__" "$out"
 if [ "$ec" = "0" ]; then ok "doctor 退出码是 0"; else bad "doctor 退出码是 $ec"; fi
+
+step "8b. main.py 主入口"
+out=$(python3 main.py list)
+expect_has "main.py list 能用" "[upload]" "$out"
+
+out=$(python3 main.py doctor 2>&1)
+if [ "$?" = "0" ]; then ok "main.py doctor 退出码是 0"; else bad "main.py doctor 退出码非 0"; fi
+
+# 不带子命令直接跑 main.py，应该就是启动靶场。
+# 端口从 $PORT 派生，并且和主流程一样先确认没人占着 ——
+# 否则一个被占的端口会报成"期望 200，实际 000"，指向完全错误的方向。
+PORT2=$((PORT + 4))
+if command -v ss >/dev/null 2>&1 && ss -ltn 2>/dev/null | grep -qE ":$PORT2([[:space:]]|$)"; then
+  bad "端口 $PORT2 被占了，跳过 main.py 起服务这一项"
+else
+  nohup python3 main.py --port "$PORT2" >/tmp/v4a-main.log 2>&1 &
+  MAINPID=$!
+  for _ in $(seq 1 40); do
+    curl -s -o /dev/null "http://127.0.0.1:$PORT2/" && break
+    sleep 0.25
+  done
+  code=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT2/")
+  expect_code "python3 main.py 不带子命令就起了靶场" "$code" "200"
+  body=$(curl -s "http://127.0.0.1:$PORT2/")
+  expect_has "main.py 起的靶场清单页正常" "登录处的 SQL 注入" "$body"
+
+  if [ -r "/proc/$MAINPID/cmdline" ] && tr '\0' ' ' <"/proc/$MAINPID/cmdline" | grep -q "main.py"; then
+    kill "$MAINPID" 2>/dev/null
+    sleep 1
+    kill -9 "$MAINPID" 2>/dev/null
+  fi
+fi
+
+# 全局选项写在子命令前面也要能走通（这条以前会被误当前置成 run）
+out=$(python3 main.py --home "$ROOT" list)
+expect_has "main.py --home X list 能走通" "[upload]" "$out"
 
 step "9. core 契约加固（在 /tmp 的副本里做，不动真靶场）"
 LAB=/tmp/v4a-hardening

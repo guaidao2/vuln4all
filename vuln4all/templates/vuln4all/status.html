@@ -1,19 +1,28 @@
 {% extends "vuln4all/base.html" %}
-{% block title %}体检{% endblock %}
+{% block title %}体检 · vuln4all{% endblock %}
 
 {% block content %}
-<h1>体检</h1>
-<p class="muted">根目录：<span class="mono">{{ home }}</span></p>
-<p>
-  <span class="tag tag-bad">错误 {{ summary.get('error', 0) }}</span>
-  <span class="tag tag-warn">警告 {{ summary.get('warn', 0) }}</span>
-  <span class="tag">提示 {{ summary.get('info', 0) }}</span>
-</p>
-{% if not has_errors %}
-  <p class="ok">没有致命问题。</p>
-{% endif %}
-<p class="muted">这个页面只做静态检查。要连冒烟请求一起跑：
-  <code>vuln4all doctor</code></p>
+<div class="page-head">
+  <h1>体检</h1>
+  <p class="page-sub">
+    检查模块合不合契约、挂载点有没有撞车、有没有硬编码的绝对路径。这个页面只做静态检查；
+    要连冒烟请求一起跑，用 <code>python main.py doctor</code>。
+  </p>
+</div>
+
+<div class="panel">
+  <h2>概览</h2>
+  <p class="card-meta">
+    <span class="tag tag-bad">错误 {{ summary.get('error', 0) }}</span>
+    <span class="tag tag-warn">警告 {{ summary.get('warn', 0) }}</span>
+    <span class="tag">提示 {{ summary.get('info', 0) }}</span>
+    <span class="tag">{{ registry.entries | length }} 个模块</span>
+  </p>
+  <p class="muted small">根目录 <span class="mono">{{ home }}</span></p>
+  {% if not has_errors %}
+    <div class="notice notice-ok">没有致命问题。</div>
+  {% endif %}
+</div>
 
 {% if findings %}
 <table class="findings">
@@ -34,21 +43,26 @@
   <p class="muted">没有任何发现。</p>
 {% endif %}
 
-<h2>挂载点</h2>
-<table class="findings">
-  <thead><tr><th>路径</th><th>模块</th><th>说明</th></tr></thead>
-  <tbody>
-    {% for entry in registry.entries %}
-      {% if entry.ok %}
-        {% for mount in entry.mounts %}
-        <tr>
-          <td class="mono">{{ mount.path }}/</td>
-          <td class="mono">{{ entry.id }}</td>
-          <td>{{ '隐藏入口' if mount.hidden else ('主入口' if not mount.key else '公开入口') }}</td>
-        </tr>
-        {% endfor %}
-      {% endif %}
-    {% endfor %}
-  </tbody>
-</table>
+<section class="cat">
+  <header class="cat-head">
+    <h2>挂载点</h2>
+    <span class="cat-n">{{ registry.entries | length }} 个模块</span>
+  </header>
+  <table class="findings">
+    <thead><tr><th>路径</th><th>模块</th><th>说明</th></tr></thead>
+    <tbody>
+      {% for entry in registry.entries %}
+        {% if entry.ok %}
+          {% for mount in entry.mounts %}
+          <tr>
+            <td class="mono">{{ mount.path }}/</td>
+            <td class="mono">{{ entry.id }}</td>
+            <td>{{ '隐藏入口' if mount.hidden else ('主入口' if not mount.key else '公开入口') }}</td>
+          </tr>
+          {% endfor %}
+        {% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
 {% endblock %}

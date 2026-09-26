@@ -28,6 +28,7 @@ from markupsafe import Markup, escape
 from .contract import Ctx, Vuln
 
 __version__ = "0.1.0"
+__author__ = "guaidao2"
 
 __all__ = [
     "Vuln",

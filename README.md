@@ -5,6 +5,8 @@
 像 Metasploit 那样：你不用改 core、不用在注册表里登记、不用碰任何别人的文件。
 在 `modules/<分类>/<名字>/` 放一个 `module.py`，重启靶场，它就出现在首页清单里。
 
+作者：**guaidao2**
+
 > ⚠️ **这是故意留洞的靶场。只在本机或隔离的虚拟机里跑。**
 > 绝不要暴露到公网、生产网络，或者任何你能被别人访问到的地址。
 
@@ -13,38 +15,43 @@
 ## 跑起来
 
 ```bash
-python3 -m vuln4all run
+python3 main.py
 ```
 
-默认只绑 `127.0.0.1:8800`。想绑到别的地址必须显式加
+就这一条。默认只绑 `127.0.0.1:8800`。想绑到别的地址必须显式加
 `--i-know-what-im-doing`，否则它会拒绝启动。
 
 然后打开 <http://127.0.0.1:8800/>：
 
-- `/` —— 题目清单（自动生成，按分类分组）
+- `/` —— 题目清单（自动生成，按分类分组，带搜索和分类筛选）
 - `/__vuln4all/status` —— 体检页
-- 每道题的页面顶部都有「重置这题」按钮
+- 每道题的页面顶部都有「重置这题」按钮，以及「提示」/「答案」两个折叠区
 
 ## 命令
 
+`main.py` 是主入口，不带子命令就是启动靶场：
+
 ```bash
-vuln4all list                     # 列出所有题目
-vuln4all list --category sqli     # 只看某一类
-vuln4all run                      # 启动（--port / --host / --reload）
-vuln4all reset sqli/login_bypass  # 把一道题恢复出厂
-vuln4all reset --all              # 全部恢复
-vuln4all doctor                   # 体检：模块合不合规、能不能跑
-vuln4all new xss/dom_based        # 生成一个新题目的骨架
+python3 main.py                        # 启动靶场
+python3 main.py --port 9000            # 换端口
+python3 main.py list                   # 列出所有题目
+python3 main.py list --category sqli   # 只看某一类
+python3 main.py reset sqli/login_bypass  # 把一道题恢复出厂
+python3 main.py reset --all            # 全部恢复
+python3 main.py doctor                 # 体检：模块合不合规、能不能跑
+python3 main.py new xss/dom_based      # 生成一个新题目的骨架
 ```
 
-`vuln4all doctor` 有错误时返回非 0 退出码，可以直接挂 CI。
+装成包之后也能用 `vuln4all <子命令>`，或者 `python3 -m vuln4all <子命令>`，等价。
+
+`python3 main.py doctor` 有错误时返回非 0 退出码，可以直接挂 CI。
 
 ## 加一道题
 
 **一个目录、一个 `module.py`、一套模板。就这些。**
 
 ```bash
-vuln4all new sqli/login_bypass
+python3 main.py new sqli/login_bypass
 ```
 
 生成的骨架**立刻就能跑**，然后往上加洞：
@@ -171,7 +178,7 @@ ctx.url("attacker", "/")       # -> /evil-site/
 却以为已经初始化过了。整个过程持锁，免得并发 reset 交叉出一个半死的目录。
 
 所以**你只要把 `setup()` 写成可重复执行的，就一行 reset 代码都不用写**。
-页面上那个「重置这题」按钮和 `vuln4all reset` 命令都是走这条路。
+页面上那个「重置这题」按钮和 `python3 main.py reset` 命令都是走这条路。
 
 真遇到内存里的状态（比如竞态题用的共享计数），才需要自己实现 `reset(ctx)`，
 或者直接重启进程 —— 单进程架构下这是最彻底的洗牌方式。
@@ -180,25 +187,47 @@ ctx.url("attacker", "/")       # -> /evil-site/
 
 ```
 vuln4all/
+├── main.py                      # 主入口：python3 main.py 就是启动靶场
 ├── vuln4all/                    # core
 │   ├── contract.py              #   Vuln 基类 + Ctx（模块契约）
 │   ├── registry.py              #   发现 modules/、加载、算挂载点、查冲突
 │   ├── loader.py                #   importlib 动态导入，坏模块不拖垮全家
 │   ├── host.py                  #   前缀分发，拼成一个 WSGI 应用
 │   ├── doctor.py                #   体检
-│   ├── scaffold.py              #   vuln4all new 的骨架生成
+│   ├── scaffold.py              #   new 子命令的骨架生成
 │   ├── ui.py                    #   清单页 / 体检页 / 重置入口
 │   ├── cli.py                   #   命令行
 │   ├── templates/vuln4all/      #   统一外壳 base.html 等
-│   └── static/style.css
+│   └── static/style.css         #   设计系统
 ├── modules/                     # ← 题目都在这儿，一个目录一道题
 │   ├── sqli/login_bypass/
 │   ├── csrf/password_change/
 │   ├── xss/reflect_search/
 │   ├── idor/order_detail/
 │   └── upload/avatar/
+├── tools/                       # 开发/验证工具
+│   ├── deploy.py                #   推到远端主机验证（本机不跑靶场）
+│   └── verify.sh                #   端到端验证：起靶场 + 逐题打一遍
 └── workspace/                   # 运行时生成，每道题的私有数据，随时能删
 ```
+
+## 前端
+
+`vuln4all/static/style.css` 是一套自带的设计系统，`base.html` 是外壳。
+模块的模板 `{% extends "vuln4all/base.html" %}` 就白拿题目页头、
+「提示」/「答案」折叠区和重置按钮。
+
+模板里这几个类名是**公开 API**，样式随便改，改名要连带改所有模块：
+
+| 类名 | 用途 |
+|---|---|
+| `btn` / `btn-ghost` | 按钮 |
+| `payload` | 命令行、payload 这类等宽文本块 |
+| `findings` | 数据表格（订单列表、体检结果都在用） |
+| `mono` / `muted` / `err` / `ok` / `small` | 文字样式 |
+| `badge` / `tag` | 小徽标 |
+
+清单页的搜索框和分类筛选是原生 JS，没有依赖。
 
 ## 两条设计原则
 
@@ -243,4 +272,4 @@ apt install python3-flask
 
 ## License
 
-MIT
+MIT · © guaidao2

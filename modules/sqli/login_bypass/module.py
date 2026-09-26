@@ -12,7 +12,7 @@ from vuln4all import Vuln, redirect, render_template, request, session, url_for
 class LoginBypass(Vuln):
     info = {
         "name": "登录处的 SQL 注入",
-        "author": ["vuln4all"],
+        "author": ["guaidao2"],
         "cwe": "CWE-89",
         "owasp": "A03:2021 - Injection",
         "description": (

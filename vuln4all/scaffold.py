@@ -18,7 +18,7 @@ from vuln4all import Vuln, render_template, request
 class {cls}(Vuln):
     info = {{
         "name": "{name}",
-        "author": ["TODO 你的名字"],
+        "author": ["guaidao2"],
         "cwe": "TODO，例如 CWE-89",
         "owasp": "TODO，例如 A03:2021 - Injection",
         "description": "TODO 一句话说清漏洞在哪。",

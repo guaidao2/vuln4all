@@ -9,7 +9,7 @@ from vuln4all import Vuln, render_template, request
 class ReflectSearch(Vuln):
     info = {
         "name": "搜索框的反射型 XSS",
-        "author": ["vuln4all"],
+        "author": ["guaidao2"],
         "cwe": "CWE-79",
         "owasp": "A03:2021 - Injection",
         "description": (

@@ -12,7 +12,7 @@ from vuln4all import Vuln, redirect, render_template, request, session, url_for
 class OrderDetail(Vuln):
     info = {
         "name": "改个数字看别人的订单（IDOR）",
-        "author": ["vuln4all"],
+        "author": ["guaidao2"],
         "cwe": "CWE-639",
         "owasp": "A01:2021 - Broken Access Control",
         "description": (

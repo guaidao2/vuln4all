@@ -1,8 +1,10 @@
 {% extends "vuln4all/base.html" %}
-{% block title %}出错了{% endblock %}
+{% block title %}出错了 · vuln4all{% endblock %}
 
 {% block content %}
-<h1>出错了</h1>
-<p class="err">{{ message }}</p>
+<div class="page-head">
+  <h1>出错了</h1>
+</div>
+<div class="notice notice-bad">{{ message }}</div>
 <p><a href="{{ target }}">回去</a></p>
 {% endblock %}

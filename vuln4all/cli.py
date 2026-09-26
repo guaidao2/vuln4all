@@ -245,7 +245,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv=None) -> int:
+def main(argv=None, default_home=None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     if not getattr(args, "command", None):
@@ -253,7 +253,8 @@ def main(argv=None) -> int:
         return 0
 
     if getattr(args, "home", None) is None:
-        args.home = find_home()
+        # main.py 会把自己的位置传进来，保证在任意工作目录下都能找到 modules/
+        args.home = Path(default_home).resolve() if default_home else find_home()
     else:
         args.home = Path(args.home).expanduser().resolve()
 

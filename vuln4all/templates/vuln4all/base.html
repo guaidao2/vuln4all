@@ -1,74 +1,116 @@
 {#- 所有页面的外壳。模块的模板 {% extends "vuln4all/base.html" %} 就能拿到
-    统一的题目信息条、提示/答案折叠区，以及一个白送的重置按钮。 -#}
+    统一的题目页头、提示/答案折叠区，以及一个白送的重置按钮。
+
+    这里用到的类名（btn / payload / mono / muted / err / ok / findings / tag）
+    是给模块模板用的公开 API，改名要连带改所有模块。 -#}
 <!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}{% if VULN %}{{ VULN.info.name }}{% else %}vuln4all{% endif %}{% endblock %}</title>
+  <meta name="color-scheme" content="dark">
+  <title>{% block title %}{% if VULN %}{{ VULN.info.name }} · {% endif %}vuln4all{% endblock %}</title>
   <link rel="stylesheet" href="{{ V4A_STATIC }}/style.css">
 </head>
 <body>
+  <div class="aura" aria-hidden="true"></div>
+
   <header class="topbar">
-    <a class="brand" href="{{ V4A_HOME }}">vuln4all</a>
-    {% if VULN %}<span class="crumb">{{ VULN.info.name }}</span>{% endif %}
-    <nav class="topnav">
-      <a href="{{ V4A_HOME }}">题目清单</a>
-      <a href="{{ V4A_STATUS }}">体检</a>
-    </nav>
+    <div class="shell topbar-inner">
+      <a class="brand" href="{{ V4A_HOME }}">
+        <span class="brand-mark" aria-hidden="true">&lt;/&gt;</span>
+        <span class="brand-text">vuln4all</span>
+      </a>
+      {% if VULN %}
+        <span class="crumb-sep" aria-hidden="true">/</span>
+        <span class="crumb" title="{{ VULN.id }}">{{ VULN.info.name }}</span>
+      {% endif %}
+      <nav class="topnav">
+        <a class="navlink" href="{{ V4A_HOME }}">题目清单</a>
+        <a class="navlink" href="{{ V4A_STATUS }}">体检</a>
+      </nav>
+    </div>
   </header>
 
-  {% if VULN %}
-  <section class="vulnbar">
-    <div class="vulnbar-meta">
-      <strong>{{ VULN.info.name }}</strong>
-      <span class="mono muted">{{ VULN.id }}</span>
-      {% if VULN.info.cwe %}<span class="tag">{{ VULN.info.cwe }}</span>{% endif %}
-      {% if VULN.info.owasp %}<span class="tag">{{ VULN.info.owasp }}</span>{% endif %}
+  <div class="shell">
+    {% if VULN %}
+    <section class="hero-card">
+      <div class="hero-main">
+        <div class="hero-badges">
+          <span class="badge mono">{{ VULN.id }}</span>
+          {% if VULN.info.cwe %}<span class="badge badge-cwe">{{ VULN.info.cwe }}</span>{% endif %}
+          {% if VULN.info.owasp %}<span class="badge badge-owasp">{{ VULN.info.owasp }}</span>{% endif %}
+        </div>
+        <h1 class="hero-title">{{ VULN.info.name }}</h1>
+        {% if VULN.info.description %}
+          <p class="hero-desc">{{ VULN.info.description }}</p>
+        {% endif %}
+      </div>
+      <div class="hero-side">
+        <form method="post" action="{{ V4A_RESET }}"
+              onsubmit="return confirm('把这道题恢复出厂？这会清空它自己的数据。');">
+          <input type="hidden" name="id" value="{{ VULN.id }}">
+          <input type="hidden" name="next" value="{{ request.script_root }}{{ request.path }}">
+          <button type="submit" class="btn">重置这题</button>
+        </form>
+        <a class="btn btn-ghost" href="{{ V4A_HOME }}">回清单</a>
+      </div>
+    </section>
+
+    <div class="acc-row">
+      <details class="acc">
+        <summary>
+          <span class="acc-dot" aria-hidden="true"></span>
+          <span>提示</span>
+          <span class="acc-hint">卡住了再看</span>
+        </summary>
+        <div class="acc-body">
+          {% if VULN.info.hint %}
+            <p>{{ VULN.info.hint }}</p>
+          {% else %}
+            <p class="muted">这道题没写提示。</p>
+          {% endif %}
+          {% if VULN.info.author %}
+            <p class="muted small">出题：{{ VULN.info.author | join('、') }}</p>
+          {% endif %}
+        </div>
+      </details>
+
+      <details class="acc acc-warn">
+        <summary>
+          <span class="acc-dot" aria-hidden="true"></span>
+          <span>答案</span>
+          <span class="acc-hint">先自己试，别急着点开</span>
+        </summary>
+        <div class="acc-body">
+          {% if VULN.info.solution %}
+            <pre class="payload">{{ VULN.info.solution }}</pre>
+          {% else %}
+            <p class="muted">这道题没写答案。</p>
+          {% endif %}
+          {% if VULN.info.refs %}
+            <p class="muted small">参考资料</p>
+            <ul class="refs">
+              {% for ref in VULN.info.refs %}
+                <li><a href="{{ ref }}" target="_blank" rel="noopener noreferrer">{{ ref }}</a></li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+        </div>
+      </details>
     </div>
-    <form class="vulnbar-actions" method="post" action="{{ V4A_RESET }}"
-          onsubmit="return confirm('把这道题恢复出厂？这会清空它自己的数据。');">
-      <input type="hidden" name="id" value="{{ VULN.id }}">
-      <input type="hidden" name="next" value="{{ request.script_root }}{{ request.path }}">
-      <button type="submit" class="btn">重置这题</button>
-    </form>
-  </section>
+    {% endif %}
 
-  <details class="teach">
-    <summary>这题在讲什么 + 提示</summary>
-    <div class="teach-body">
-      {% if VULN.info.description %}<p>{{ VULN.info.description }}</p>{% endif %}
-      {% if VULN.info.hint %}<p><strong>提示：</strong>{{ VULN.info.hint }}</p>{% endif %}
-      {% if VULN.info.author %}
-        <p class="muted">出题：{{ VULN.info.author | join('、') }}</p>
-      {% endif %}
+    <main class="content">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+
+  <footer class="foot">
+    <div class="shell foot-inner">
+      <span class="foot-warn">{{ V4A_BANNER }}</span>
+      <span class="foot-author">vuln4all · guaidao2</span>
     </div>
-  </details>
-
-  <details class="teach">
-    <summary>答案（先自己试，别急着点开）</summary>
-    <div class="teach-body">
-      {% if VULN.info.solution %}
-        <pre class="payload">{{ VULN.info.solution }}</pre>
-      {% else %}
-        <p class="muted">这道题没写答案。</p>
-      {% endif %}
-      {% if VULN.info.refs %}
-        <p class="muted">参考资料：</p>
-        <ul class="refs">
-          {% for ref in VULN.info.refs %}
-            <li><a href="{{ ref }}" target="_blank" rel="noopener noreferrer">{{ ref }}</a></li>
-          {% endfor %}
-        </ul>
-      {% endif %}
-    </div>
-  </details>
-  {% endif %}
-
-  <main>
-    {% block content %}{% endblock %}
-  </main>
-
-  <footer class="foot">{{ V4A_BANNER }}</footer>
+  </footer>
 </body>
 </html>

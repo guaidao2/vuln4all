@@ -2,81 +2,165 @@
 {% block title %}vuln4all 靶场{% endblock %}
 
 {% block content %}
-<h1>题目清单</h1>
+<div class="page-head">
+  <h1>题目清单</h1>
+  <p class="page-sub">
+    故意留洞的 Web 靶场。加一道题就是把一个模块丢进
+    <code>modules/&lt;分类&gt;/&lt;名字&gt;/</code> —— 不用登记，也不用改 core。
+  </p>
+</div>
 
 {% if not registry.entries %}
-  <p class="muted">modules/ 下面一道题都没有。</p>
-  <p>起个头：</p>
-  <pre class="payload">vuln4all new sqli/login_bypass</pre>
+  <div class="panel">
+    <h2>还没有题目</h2>
+    <p class="muted"><code>modules/</code> 下面一个模块都没有。起个头：</p>
+    <pre class="payload">python main.py new sqli/login_bypass</pre>
+  </div>
 {% else %}
-  <p class="muted">共 {{ registry.entries | length }} 道题。点标题进题。</p>
+
+  <div class="hero-search">
+    <label class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" aria-hidden="true">
+        <circle cx="11" cy="11" r="7"></circle>
+        <path d="M20 20l-3.5-3.5"></path>
+      </svg>
+      <input id="v4a-search" type="search" autocomplete="off"
+             placeholder="搜题目、分类、CWE……" aria-label="搜索题目">
+    </label>
+    <div class="chips" id="v4a-chips">
+      <button type="button" class="chip is-on" data-cat="*">全部</button>
+      {% for category, entries in registry.categories() %}
+        <button type="button" class="chip" data-cat="{{ category }}">
+          {{ category }}<span class="chip-n">{{ entries | length }}</span>
+        </button>
+      {% endfor %}
+    </div>
+  </div>
 
   {% for category, entries in registry.categories() %}
-  <section class="cat">
-    <h2>{{ category }}</h2>
+  <section class="cat" data-cat="{{ category }}">
+    <header class="cat-head">
+      <h2>{{ category }}</h2>
+      <span class="cat-n">{{ entries | length }} 道</span>
+    </header>
     <ul class="cards">
       {% for entry in entries %}
       <li class="card{% if not entry.ok %} card-bad{% endif %}">
         {% if entry.ok %}
           <a class="card-title" href="{{ entry.main_path }}/">{{ entry.display_name }}</a>
           <div class="card-meta">
-            <span class="mono muted">{{ entry.id }}</span>
-            {% if entry.info.cwe %}<span class="tag">{{ entry.info.cwe }}</span>{% endif %}
+            <span class="mono">{{ entry.id }}</span>
+            {% if entry.info.cwe %}<span class="badge badge-cwe">{{ entry.info.cwe }}</span>{% endif %}
             {% for mount in entry.hidden_mounts %}
-              <span class="tag tag-hidden" title="{{ mount.path }}">隐藏入口</span>
+              <span class="badge badge-hidden" title="{{ mount.path }}">隐藏入口</span>
             {% endfor %}
           </div>
-          {% if entry.visible_mounts | length > 1 %}
-            <p class="card-mounts">另有入口：
-              {% for mount in entry.visible_mounts %}
-                {% if mount.key %}<a href="{{ mount.path }}/" class="mono">{{ mount.path }}/</a>{% endif %}
-              {% endfor %}
-            </p>
-          {% endif %}
           {% if entry.info.description %}
             <p class="card-desc">{{ entry.info.description }}</p>
           {% endif %}
+          {% if entry.visible_mounts | length > 1 %}
+            <p class="card-mounts">另有入口：
+              {% for mount in entry.visible_mounts %}
+                {% if mount.key %}<a href="{{ mount.path }}/">{{ mount.path }}/</a>{% endif %}
+              {% endfor %}
+            </p>
+          {% endif %}
         {% else %}
           <span class="card-title bad">{{ entry.id }} —— 加载失败</span>
-          <p class="err">{{ entry.error }}</p>
-          <p class="muted">跑一下 <code>vuln4all doctor {{ entry.id }}</code> 看细节。</p>
+          <p class="err small">{{ entry.error }}</p>
+          <p class="muted small">跑一下 <code>python main.py doctor {{ entry.id }}</code> 看细节。</p>
         {% endif %}
       </li>
       {% endfor %}
     </ul>
   </section>
   {% endfor %}
+
+  <p class="empty" id="v4a-empty" hidden>没有匹配的题目。</p>
 {% endif %}
 
 {% if registry.conflicts or registry.broken_dirs or registry.skipped_mounts %}
-<section class="cat">
+<div class="panel">
   <h2>需要注意</h2>
-  <ul class="cards">
+  <div class="cards">
     {% for conflict in registry.conflicts %}
-      <li class="card card-warn">{{ conflict }}</li>
+      <div class="card card-warn"><span class="err small">{{ conflict }}</span></div>
     {% endfor %}
     {% for directory, reason in registry.broken_dirs %}
-      <li class="card card-warn">
-        <span class="mono">modules/{{ directory }}</span> {{ reason }}，所以没被加载。
-      </li>
+      <div class="card card-warn">
+        <span class="small"><span class="mono">modules/{{ directory }}</span> {{ reason }}，
+        所以没被加载。</span>
+      </div>
     {% endfor %}
     {% for module_id, path, taken_by in registry.skipped_mounts %}
-      <li class="card card-warn">
-        <span class="mono">{{ module_id }}</span> 想挂在
+      <div class="card card-warn">
+        <span class="small"><span class="mono">{{ module_id }}</span> 想挂在
         <span class="mono">{{ path }}</span>，但已经被
-        <span class="mono">{{ taken_by }}</span> 占了，所以这个入口没生效。
-      </li>
+        <span class="mono">{{ taken_by }}</span> 占了，所以这个入口没生效。</span>
+      </div>
     {% endfor %}
-  </ul>
-</section>
+  </div>
+</div>
 {% endif %}
 
-<section class="cat">
+<div class="panel">
   <h2>加一道题</h2>
-  <p>在 <code>modules/&lt;分类&gt;/&lt;名字&gt;/module.py</code> 里继承
-  <code>Vuln</code>、实现 <code>create_app()</code>，重启靶场就出现在上面。
-  不用登记，也不用改 core。</p>
-  <pre class="payload">vuln4all new &lt;分类&gt;/&lt;名字&gt;   # 生成骨架
-vuln4all doctor              # 检查写得合不合规</pre>
-</section>
+  <p class="muted small">在 <code>modules/&lt;分类&gt;/&lt;名字&gt;/module.py</code> 里继承
+  <code>Vuln</code>、实现 <code>create_app()</code>，重启靶场就出现在上面。</p>
+  <pre class="payload">python main.py new &lt;分类&gt;/&lt;名字&gt;   # 生成骨架，不改一行就能跑
+python main.py doctor              # 检查写得合不合规</pre>
+</div>
+
+{% if registry.entries %}
+<script>
+(function () {
+  var input = document.getElementById('v4a-search');
+  var chips = Array.prototype.slice.call(document.querySelectorAll('#v4a-chips .chip'));
+  var cats = Array.prototype.slice.call(document.querySelectorAll('.cat'));
+  var empty = document.getElementById('v4a-empty');
+  var active = '*';
+
+  function apply() {
+    var q = (input.value || '').trim().toLowerCase();
+    var shown = 0;
+
+    cats.forEach(function (cat) {
+      var catOk = active === '*' || cat.getAttribute('data-cat') === active;
+      var cards = Array.prototype.slice.call(cat.querySelectorAll('.card'));
+      var catShown = 0;
+
+      cards.forEach(function (card) {
+        var hit = !q || card.textContent.toLowerCase().indexOf(q) !== -1;
+        var ok = catOk && hit;
+        card.hidden = !ok;
+        if (ok) { catShown++; shown++; }
+      });
+
+      cat.hidden = catShown === 0;
+    });
+
+    if (empty) { empty.hidden = shown !== 0; }
+  }
+
+  if (input) { input.addEventListener('input', apply); }
+
+  chips.forEach(function (chip) {
+    chip.addEventListener('click', function () {
+      active = chip.getAttribute('data-cat');
+      chips.forEach(function (c) { c.classList.toggle('is-on', c === chip); });
+      apply();
+    });
+  });
+
+  // 按 / 直接聚焦搜索框
+  document.addEventListener('keydown', function (e) {
+    if (e.key === '/' && document.activeElement !== input) {
+      e.preventDefault();
+      input.focus();
+    }
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}

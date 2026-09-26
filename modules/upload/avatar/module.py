@@ -18,7 +18,7 @@ SAFE_NAME = re.compile(r"[^0-9A-Za-z._\u4e00-\u9fff-]")
 class AvatarUpload(Vuln):
     info = {
         "name": "上传头像处的文件类型绕过",
-        "author": ["vuln4all"],
+        "author": ["guaidao2"],
         "cwe": "CWE-434",
         "owasp": "A03:2021 - Injection",
         "description": (
