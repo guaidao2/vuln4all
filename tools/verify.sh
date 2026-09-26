@@ -749,6 +749,47 @@ expect_has "配置文件里的 reload 能生效" "只读 ini -> True" "$out"
 expect_has "--no-reload 能盖掉它" "--no-reload -> False" "$out"
 rm -f vuln4all.ini
 
+step "12. 仓库卫生"
+# 代码、模板、文档里不允许出现表情符号。加一条自动检查，免得以后回归。
+hygiene=$(python3 - <<'PY'
+import pathlib
+
+RANGES = [
+    (0x1F300, 0x1FAFF), (0x1F000, 0x1F2FF), (0x2600, 0x27BF),
+    (0x2190, 0x21FF), (0x2B00, 0x2BFF), (0xFE0F, 0xFE0F),
+    (0x2049, 0x2049), (0x203C, 0x203C), (0x1F1E6, 0x1F1FF),
+]
+# 这些是正常的中文排版符号，不算表情
+ALLOW = set("·—…→←↑↓≥≤×÷°±§¶†‡•‰′″※「」『』【】《》〈〉“”‘’、。，；：？！（）")
+
+def looks_like_emoji(ch):
+    if ch in ALLOW:
+        return False
+    cp = ord(ch)
+    return any(lo <= cp <= hi for lo, hi in RANGES)
+
+hits = []
+for path in sorted(pathlib.Path(".").rglob("*")):
+    if not path.is_file():
+        continue
+    rel = path.relative_to(".").as_posix()
+    if any(part in rel for part in (".git/", "__pycache__/", "workspace/")):
+        continue
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError):
+        continue
+    for lineno, line in enumerate(text.splitlines(), 1):
+        if any(looks_like_emoji(c) for c in line):
+            hits.append("%s:%d" % (rel, lineno))
+
+print("EMOJI_COUNT=%d" % len(hits))
+for item in hits[:8]:
+    print("  " + item)
+PY
+)
+expect_has "代码和文档里没有表情符号" "EMOJI_COUNT=0" "$hygiene"
+
 step "结果"
 printf '  通过 %d 项，失败 %d 项\n' "$PASS" "$FAIL"
 if [ "$FAIL" != "0" ]; then

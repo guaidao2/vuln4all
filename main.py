@@ -5,7 +5,7 @@
 
     python main.py                  # 起靶场（默认 127.0.0.1:8800）
     python main.py --port 9000
-    python main.py --host 0.0.0.0 --i-know-what-im-doing
+    python main.py --lan            # 开放到局域网（多人一起打）
 
 其它子命令照常用：
 
@@ -16,7 +16,7 @@
 
 也可以继续用 `python -m vuln4all ...`，两条路等价。
 
-⚠️ 这是故意留洞的靶场，只在本机或隔离环境跑。
+注意：这是故意留洞的靶场，只在本机或隔离环境跑。
 """
 
 from __future__ import annotations

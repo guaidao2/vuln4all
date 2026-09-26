@@ -900,7 +900,7 @@ form label {
 }
 
 .foot-warn::before {
-  content: "⚠";
+  content: "注意：";
   margin-right: 6px;
   color: var(--warn);
 }
