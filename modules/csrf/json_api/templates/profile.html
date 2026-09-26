@@ -1,0 +1,52 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}个人中心 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>个人中心</h1>
+<p>当前登录：<strong>{{ user }}</strong></p>
+
+<h2>我的邮箱</h2>
+<p class="mono" id="email">{{ email }}</p>
+
+<form id="email-form" onsubmit="return sendEmail(event)">
+  <p>
+    <input type="text" name="email" value="{{ email }}" style="min-width:280px">
+    <button type="submit" class="btn">保存</button>
+  </p>
+</form>
+<p class="muted small" id="result"></p>
+
+<p class="muted small">
+  这个页面的"保存"是前端用 <code>fetch</code> 发 <code>application/json</code>
+  给接口的 —— 用开发者工具的 Network 面板看一眼那个请求。
+</p>
+
+<script>
+function sendEmail(e) {
+  e.preventDefault();
+  var value = document.querySelector('#email-form input[name=email]').value;
+  fetch({{ api | tojson }}, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({email: value})
+  }).then(function (r) { return r.json(); })
+    .then(function (data) {
+      document.getElementById('result').textContent =
+        data.ok ? "已保存。" : ("失败：" + data.error);
+      if (data.ok) { document.getElementById('email').textContent = data.email; }
+    });
+  return false;
+}
+</script>
+
+<h2>攻击者站点</h2>
+<p>
+  假设你在另一个标签页里被钓鱼打开了这么一个页面：
+  <a href="{{ evil_url }}">{{ evil_url }}</a>
+</p>
+<p class="muted small">
+  先保持登录状态，再去那个页面转一圈，然后回来看看你的邮箱。
+</p>
+
+<p><a href="{{ url_for('logout') }}">退出</a></p>
+{% endblock %}

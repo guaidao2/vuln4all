@@ -1,0 +1,67 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}批量上传头像 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>批量上传头像</h1>
+
+<h2>运营公告</h2>
+{% if announcement.strip() != baseline %}
+  <div class="notice notice-ok">
+    这条公告<strong>被写掉了</strong> —— 它在上传目录的上一级，
+    正常上传永远碰不到它。<strong>这题通了。</strong>
+  </div>
+{% endif %}
+<pre class="payload">{{ announcement }}</pre>
+<p class="muted small">
+  这个文件在 <span class="mono">{{ guard_dir }}/</span> 下，
+  而解压目标是 <span class="mono">{{ upload_dir }}/</span> —— 两者是相邻的两个目录。
+</p>
+
+<form method="post" action="{{ url_for('index') }}" enctype="multipart/form-data">
+  <p><input type="file" name="package" accept=".zip"></p>
+  <p><button type="submit" class="btn">上传并解压</button></p>
+</form>
+
+{% if report %}
+  {% if report.error %}
+    <div class="notice notice-bad">{{ report.error }}</div>
+  {% else %}
+    <h2>这次解压的结果</h2>
+    <table class="findings">
+      <tbody>
+        <tr>
+          <th>写进去的成员</th>
+          <td class="mono">{{ report.written | join('、') or '（无）' }}</td>
+        </tr>
+        <tr>
+          <th>被后缀拦下的</th>
+          <td class="mono">{{ report.blocked | join('、') or '（无）' }}</td>
+        </tr>
+        <tr>
+          <th>落到上传目录外面的</th>
+          <td class="mono {% if report.escaped %}err{% endif %}">
+            {{ report.escaped | join('、') or '（无）' }}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+    {% if report.escaped %}
+      <p class="err small">
+        最后那一行就是洞：成员名里的 <code>../</code> 被当成了路径，不是名字。
+      </p>
+    {% endif %}
+  {% endif %}
+{% endif %}
+
+<h2>上传目录里的文件</h2>
+<p class="mono small">{{ files | join('、') or '（空）' }}</p>
+
+<form method="post" action="{{ url_for('reset_files') }}" style="margin-top:16px">
+  <button type="submit" class="btn btn-ghost">清空上传目录并恢复公告</button>
+</form>
+
+<p class="muted small">
+  防可执行后缀那段代码是没问题的 —— 问题出在它旁边那一行：
+  <code>target = upload_dir / name</code>，中间少了"把成员名收敛成纯文件名"这一步。
+</p>
+{% endblock %}

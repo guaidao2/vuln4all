@@ -1,0 +1,52 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}留言板 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>产品留言板</h1>
+
+{% if stored_payload %}
+  <div class="notice notice-ok">
+    库里现在有 <strong>{{ armed_count }}</strong> 条会被执行的留言 ——
+    <strong>这题通了</strong>。把地址栏清干净再刷新试试。
+  </div>
+{% endif %}
+
+<form method="post" action="{{ url_for('index') }}">
+  <p><input type="text" name="author" value="" placeholder="你的名字（可留空）" style="min-width:160px"></p>
+  <p><textarea name="body" rows="3" style="width:100%;min-width:0"
+               placeholder="说点什么"></textarea></p>
+  <p>
+    <button type="submit" class="btn">发布</button>
+    <span class="muted small">发布之后刷新页面，看看它变成了什么</span>
+  </p>
+</form>
+
+<h2>共 {{ messages | length }} 条留言</h2>
+{% if messages %}
+  <ul class="cards">
+    {% for m in messages %}
+    <li class="card">
+      <div class="card-meta">
+        <span class="mono">{{ m['author'] }}</span>
+        <span class="muted small">{{ m['created'] }}</span>
+      </div>
+      {#- ↓↓↓ 洞就在这里：|safe 关掉了 Jinja 的自动转义 ↓↓↓
+          正常写法是 {{ m['body'] }}，Jinja 会把 < > & 转义掉。 -#}
+      <p>{{ m['body'] | safe }}</p>
+      {#- ↑↑↑ 正确写法：{{ m['body'] }} ↑↑↑ -#}
+    </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <p class="muted">还没有留言。</p>
+{% endif %}
+
+<form method="post" action="{{ url_for('clear') }}" style="margin-top:20px">
+  <button type="submit" class="btn btn-ghost">清空留言板</button>
+</form>
+
+<p class="muted small">
+  这一题的 payload 是<strong>存在服务器上</strong>的。下一次打开这个页面时，
+  URL 里什么都不用带，它照样会执行 —— 这就是存储型和反射型的区别。
+</p>
+{% endblock %}

@@ -1,0 +1,69 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}欢迎页 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>欢迎回来</h1>
+
+{#- 这行是空的 —— 内容由下面的 JS 填。服务端不会往这里写任何东西。 -#}
+<p id="greet" style="font-size:18px"></p>
+
+<h2>这次请求的响应体里，有你给的那段字符串吗</h2>
+<table class="findings">
+  <tbody>
+    <tr><th>你带参数了吗</th><td>{{ "带了" if has_input else "没带" }}</td></tr>
+    <tr>
+      <th>响应体里有没有这串原文</th>
+      <td class="{% if exposes_payload %}err{% else %}ok{% endif %}">
+        {{ "有" if exposes_payload else "没有" }}
+      </td>
+    </tr>
+  </tbody>
+</table>
+<p class="muted small">
+  这个"没有"就是这一题的全部要点：<strong>payload 不在服务端返回的 HTML 里，
+  但它在浏览器里执行了。</strong> 所以判断这类漏洞只能靠读前端代码，
+  只看一眼响应体是发现不了的。
+</p>
+
+<h2>页面里的那段 JS</h2>
+<pre class="payload">var raw = "";
+if (location.hash.length > 1) {
+  raw = decodeURIComponent(location.hash.slice(1));
+} else {
+  raw = new URLSearchParams(location.search).get("name") || "";
+}
+document.getElementById("greet").innerHTML = "你好，" + raw + "！";</pre>
+
+<p class="muted small">
+  看两个地方：它从哪里取输入（<code>location</code> 的哪一部分），
+  以及把结果放进了什么（<code>innerHTML</code> 还是 <code>textContent</code>）。
+</p>
+
+<script>
+  var raw = "";
+  if (location.hash.length > 1) {
+    try {
+      raw = decodeURIComponent(location.hash.slice(1));
+    } catch (e) {
+      raw = location.hash.slice(1);
+    }
+    // fragment 根本不会发给服务端，所以走 #... 这条路时服务端完全不知情。
+    // 下面这一小段只是让页面自己回报一句"我收到了一段 payload" ——
+    // 靶场靠它记进度。真实的 DOM 型 XSS 没有这个通路，所以才难查。
+    if (/<\s*script\b|<\s*[a-z][^>]*\son\w+\s*=/i.test(raw)) {
+      try {
+        fetch({{ hit_url | tojson }}, {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({hash: raw})
+        });
+      } catch (e) {}
+    }
+  } else {
+    raw = new URLSearchParams(location.search).get("name") || "";
+  }
+  // ↓↓↓ 洞就在这里：把 location 里取来的字符串直接赋给 innerHTML ↓↓↓
+  document.getElementById("greet").innerHTML = "你好，" + raw + "！";
+  // ↑↑↑ 正确做法：用 textContent（它只当文本，不解析标签）↑↑↑
+</script>
+{% endblock %}

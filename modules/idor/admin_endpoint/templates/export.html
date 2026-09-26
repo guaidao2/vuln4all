@@ -1,0 +1,42 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}数据导出 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>全员数据导出</h1>
+
+{% if role != 'admin' %}
+  <div class="notice notice-ok">
+    你是 <strong>{{ user }}</strong>，角色是 <span class="mono">{{ role }}</span>
+    —— 但这份数据本来就只该给管理员看。<strong>这题通了。</strong>
+  </div>
+  <p class="muted small">
+    接口里只有一句 <code>if not session.get("user"): 拒绝</code> ——
+    它检查了"你登录了吗"，没检查"你是什么角色"。
+  </p>
+{% else %}
+  <p class="ok">你是管理员，这份数据本来就该给你。</p>
+{% endif %}
+
+<table class="findings">
+  <thead><tr><th>用户名</th><th>姓名</th><th>电话</th><th>月薪</th></tr></thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td class="mono">{{ row['username'] }}</td>
+      <td>{{ row['realname'] }}</td>
+      <td class="mono">{{ row['phone'] }}</td>
+      <td class="mono">{{ row['salary'] }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<h2>导出元信息</h2>
+<pre class="payload">batch={{ marker }}
+exported_by={{ user }} (role={{ role }})</pre>
+<p class="muted small">
+  这一行是给机器核对的标记：普通用户的响应里出现 {{ marker }} 就说明越权成功了。
+</p>
+
+<p><a href="{{ url_for('console') }}">回到控制台</a></p>
+{% endblock %}

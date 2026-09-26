@@ -1,0 +1,65 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}商品搜索 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>商品搜索</h1>
+
+<form method="post" action="{{ url_for('index') }}">
+  <p>
+    <input type="text" name="keyword" value="{{ keyword }}" placeholder="输入商品名的一部分">
+    <button type="submit" class="btn">搜索</button>
+  </p>
+</form>
+
+{% if leaked %}
+  <div class="notice notice-ok">
+    结果里出现了<strong>不属于商品表</strong>的东西 —— <strong>这题通了。</strong>
+  </div>
+{% endif %}
+
+{% if rows %}
+  <h2>找到 {{ rows | length }} 条</h2>
+  <table class="findings">
+    <thead><tr><th>编号</th><th>名称</th><th>价格</th></tr></thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td class="mono">{{ row[0] }}</td>
+        <td>{{ row[1] }}</td>
+        <td class="mono">{{ row[2] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  {% if keyword %}
+    <p class="muted">没有匹配的商品。</p>
+  {% else %}
+    <p class="muted">试试搜「键盘」。</p>
+  {% endif %}
+{% endif %}
+
+<h2>把 admin 的密码取出来</h2>
+<form method="post" action="{{ url_for('index') }}">
+  <p>
+    <input type="text" name="guess" value="" placeholder="从列表里读到的那串密码">
+    <button type="submit" class="btn">提交</button>
+  </p>
+</form>
+
+{% if feedback %}
+  {% if feedback[0] == 'ok' %}
+    <div class="notice notice-ok">{{ feedback[1] }}<strong>这题通了。</strong></div>
+  {% else %}
+    <div class="notice notice-bad">{{ feedback[1] }}</div>
+  {% endif %}
+{% endif %}
+
+<p class="muted small">
+  页面不会告诉你数据库报了什么错 —— 所以「语句失败了」和「确实没搜到」
+  在这里长得一模一样。这是故意的。
+</p>
+<p class="muted small">
+  光让列表里多出几行还不算通关 —— 得真的把 users 表里的值取出来。
+</p>
+{% endblock %}

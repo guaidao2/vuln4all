@@ -1,0 +1,45 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}控制台 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>内部工具站</h1>
+<p>当前登录：<strong>{{ user }}</strong>　角色：<span class="mono">{{ role }}</span></p>
+
+<h2>功能菜单</h2>
+<ul class="cards">
+  <li class="card">
+    <a class="card-title" href="{{ url_for('console') }}">我的资料</a>
+    <p class="card-desc">查看自己的工号和联系方式。</p>
+  </li>
+  <li class="card">
+    <a class="card-title" href="#">值班表</a>
+    <p class="card-desc">本月排班。</p>
+  </li>
+
+  {#- ↓↓↓ 前端"隐藏"了管理员入口 —— 但 HTML 里它明明白白地躺着 ↓↓↓ -#}
+  <li class="card" style="display:none">
+    <a class="card-title" href="{{ export_url }}">全员数据导出（管理员）</a>
+    <p class="card-desc">导出所有员工的姓名、电话、薪资。</p>
+  </li>
+  {#- ↑↑↑ 前端隐藏不是权限控制 ↑↑↑ -#}
+
+</ul>
+
+<p class="muted small">
+  右键「查看页面源代码」，或者直接 curl 这个页面 —— 菜单里有些东西
+  被 <code>style="display:none"</code> 藏住了。
+</p>
+<p class="muted small">
+  藏起来只是"不给看"。真正的问题是：那个接口自己怎么判断你有没有资格调它？
+</p>
+
+<h2>你的资料</h2>
+<table class="findings">
+  <tbody>
+    <tr><th>用户名</th><td class="mono">{{ user }}</td></tr>
+    <tr><th>角色</th><td class="mono">{{ role }}</td></tr>
+  </tbody>
+</table>
+
+<p><a href="{{ url_for('logout') }}">退出</a></p>
+{% endblock %}
