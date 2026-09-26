@@ -1,0 +1,40 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}管理员 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+{% if denied %}
+  <h1>403</h1>
+  <p class="err">这个页面要求 <span class="mono">session["admin"]</span> 为真。</p>
+  <p class="muted small">
+    你的 session 现在是：<span class="mono">{{ data }}</span>
+  </p>
+  <p class="muted small">
+    服务端只是读了 cookie 里的 <span class="mono">admin</span> 字段。
+    那这个字段是谁说了算？
+  </p>
+  {% if raw %}
+    <h2>你的 cookie 原始值</h2>
+    <pre class="payload">{{ raw }}</pre>
+  {% endif %}
+{% else %}
+  <h1>管理员控制台</h1>
+  <div class="notice notice-ok">你以管理员身份进来了 —— <strong>这题通了</strong>。</div>
+
+  <h2>你伪造出来的 session</h2>
+  <pre class="payload">{{ data }}</pre>
+
+  <h2>这里本来不该给你看的东西</h2>
+  <table class="findings">
+    <tbody>
+      <tr><th>全部租户</th><td class="mono">acme, globex, initech, umbrella</td></tr>
+      <tr><th>计费接口</th><td class="mono">POST /internal/billing/refund</td></tr>
+      <tr><th>密钥管理</th><td class="mono">/internal/keys/rotate</td></tr>
+    </tbody>
+  </table>
+  <p class="muted small">
+    服务端从头到尾没觉得哪里不对 —— 它信的是 cookie 里的一个布尔值。
+  </p>
+{% endif %}
+
+<p><a href="{{ url_for('dashboard') }}">回后台</a></p>
+{% endblock %}

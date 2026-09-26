@@ -1,0 +1,46 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}后台 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>订阅后台</h1>
+
+{% if admin and is_enterprise %}
+  <div class="notice notice-ok">
+    你现在是 <strong>admin</strong> 且套餐是 <strong>enterprise</strong>
+    —— 这两样都不是你的账号该有的。<strong>这题通了。</strong>
+  </div>
+{% elif admin %}
+  <div class="notice notice-ok">
+    你拿到了 <strong>admin</strong> 身份 —— <strong>这题通了。</strong>
+    （顺手把 plan 也改成 enterprise 试试？）
+  </div>
+{% endif %}
+
+<h2>你的身份</h2>
+<table class="findings">
+  <tbody>
+    <tr><th>user</th><td class="mono">{{ data.get('user', '（无）') }}</td></tr>
+    <tr><th>plan</th><td class="mono">{{ data.get('plan', '（无）') }}</td></tr>
+    <tr><th>admin</th><td class="mono">{{ data.get('admin', '（无）') }}</td></tr>
+  </tbody>
+</table>
+
+<h2>Cookie 的原始值</h2>
+<p class="muted small">
+  名字是 <span class="mono">{{ cookie_name }}</span>。粘贴到
+  <code>curl -b 'session=...'</code> 或开发者工具里都行。
+</p>
+<pre class="payload">{{ raw }}</pre>
+
+<p class="muted small">
+  它由三段用 <span class="mono">.</span> 分开：
+  <span class="mono">数据.时间戳.签名</span>。
+  <strong>把第一段 base64 解开看看</strong> —— 你会发现里面是明文 JSON。
+  「签过名」不等于「加密过」。
+</p>
+
+<p>
+  <a href="{{ url_for('admin') }}" class="btn">去管理员页</a>
+  <a href="{{ url_for('logout') }}" class="btn btn-ghost">退出</a>
+</p>
+{% endblock %}

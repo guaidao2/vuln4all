@@ -32,9 +32,21 @@ from jinja2 import ChoiceLoader, FileSystemLoader
 REQUIRED_INFO = ("name", "description")
 
 # 强烈建议填的（doctor 会提醒）
-RECOMMENDED_INFO = ("author", "cwe", "owasp", "hint", "solution", "refs")
+RECOMMENDED_INFO = ("author", "cwe", "owasp", "difficulty", "hint", "solution", "refs")
+
+#: 难度标签。**这只是个给人看的标记，core 不为它做任何机制** ——
+#: 跟 Metasploit 的 info 一样，纯元数据。填别的值也能跑，只是 doctor 会提醒一句。
+DIFFICULTIES = ("入门", "进阶", "困难")
+
+#: 难度 -> CSS 类名后缀，用来上色
+DIFFICULTY_KEYS = {"入门": "easy", "进阶": "medium", "困难": "hard"}
 
 CORE_TEMPLATES = str(Path(__file__).resolve().parent / "templates")
+
+
+def difficulty_key(value: object) -> str:
+    """难度标签 -> 样式用的键。认不出来就返回空串（不上色）。"""
+    return DIFFICULTY_KEYS.get(str(value or "").strip(), "")
 
 
 def slug(module_id: str) -> str:
@@ -145,6 +157,7 @@ class Ctx:
         app.jinja_env.globals["V4A_STATIC"] = "/__vuln4all/static"
         app.jinja_env.globals["V4A_STATUS"] = "/__vuln4all/status"
         app.jinja_env.globals["V4A_RESET"] = "/__vuln4all/reset"
+        app.jinja_env.globals["V4A_DIFF_KEY"] = difficulty_key
         app.jinja_env.globals["V4A_BANNER"] = (
             "这是故意留洞的靶场。只在本机或隔离环境跑，绝不要暴露到公网或生产网络。"
         )

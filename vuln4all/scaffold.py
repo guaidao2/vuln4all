@@ -21,6 +21,7 @@ class {cls}(Vuln):
         "author": ["guaidao2"],
         "cwe": "TODO，例如 CWE-89",
         "owasp": "TODO，例如 A03:2021 - Injection",
+        "difficulty": "TODO，入门 / 进阶 / 困难 三选一",
         "description": "TODO 一句话说清漏洞在哪。",
         "hint": "TODO 给新手的提示：先试什么、观察什么。别直接写答案。",
         "solution": "TODO 具体怎么打通，最好给一条能直接复制的 payload。",

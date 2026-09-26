@@ -1,6 +1,10 @@
 # 运行时生成：每道题的私有数据，随时可以删
 /workspace/
 
+# 本地运行配置（各人环境不同，别提交）。vuln4all.ini.example 是要提交的模板。
+/vuln4all.ini
+/vuln4all.ini.local
+
 # Python
 __pycache__/
 *.py[cod]

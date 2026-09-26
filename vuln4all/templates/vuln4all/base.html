@@ -38,6 +38,9 @@
       <div class="hero-main">
         <div class="hero-badges">
           <span class="badge mono">{{ VULN.id }}</span>
+          {% if VULN.info.difficulty %}
+            <span class="badge badge-diff badge-diff-{{ V4A_DIFF_KEY(VULN.info.difficulty) }}">{{ VULN.info.difficulty }}</span>
+          {% endif %}
           {% if VULN.info.cwe %}<span class="badge badge-cwe">{{ VULN.info.cwe }}</span>{% endif %}
           {% if VULN.info.owasp %}<span class="badge badge-owasp">{{ VULN.info.owasp }}</span>{% endif %}
         </div>

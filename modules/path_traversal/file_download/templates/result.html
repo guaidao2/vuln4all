@@ -1,0 +1,26 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}{{ name }} - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+{% if hit %}
+  <h1>你读到了不该读的东西</h1>
+  <p class="ok">
+    这份文件不在共享目录里，但你把它读出来了 —— <strong>这题通了。</strong>
+  </p>
+{% else %}
+  <h1>{{ name }}</h1>
+{% endif %}
+
+<h2>服务器解析出的绝对路径</h2>
+<pre class="payload">{{ resolved }}</pre>
+{% if escaped %}
+  <p class="muted small">
+    注意这个路径已经跑到共享目录外面了 —— 说明 <code>../</code> 没有被拦住。
+  </p>
+{% endif %}
+
+<h2>文件内容</h2>
+<pre class="payload">{{ content }}</pre>
+
+<p><a href="{{ url_for('index') }}">回到文件列表</a></p>
+{% endblock %}

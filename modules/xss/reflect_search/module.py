@@ -12,6 +12,7 @@ class ReflectSearch(Vuln):
         "author": ["guaidao2"],
         "cwe": "CWE-79",
         "owasp": "A03:2021 - Injection",
+        "difficulty": "入门",
         "description": (
             "搜索页把你输入的关键词原样塞回了 HTML 页面里，一个字符都没有转义。"
             "于是你输入的不只是「文字」，还能是「标签」甚至「脚本」。"

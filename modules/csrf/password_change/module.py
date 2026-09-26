@@ -19,6 +19,7 @@ class PasswordChange(Vuln):
         "author": ["guaidao2"],
         "cwe": "CWE-352",
         "owasp": "A01:2021 - Broken Access Control",
+        "difficulty": "进阶",
         "description": (
             "这题有两个站点：一个是需要登录的个人中心，一个是攻击者放的恶意页面。"
             "个人中心的「改密码」接口完全不看请求是从哪来的 —— 只要浏览器带着你的 "

@@ -6,13 +6,13 @@ import argparse
 import sys
 from pathlib import Path
 
+from . import config
 from . import doctor as doctor_mod
 from . import host as host_mod
 from .paths import find_home
 from .registry import Registry
 
-DEFAULT_PORT = 8800
-LOOPBACK = ("127.0.0.1", "localhost", "::1")
+DEFAULT_PORT = config.DEFAULTS["port"]
 
 RULE = "=" * 74
 
@@ -56,10 +56,47 @@ def cmd_list(args) -> int:
 def cmd_run(args) -> int:
     registry = _load(args.home)
 
+    # 命令行 > vuln4all.ini > 默认值。argparse 那边用了 SUPPRESS，
+    # 所以"用户没写"和"用户写了默认值"能区分开。
+    overrides = {key: getattr(args, key) for key in ("host", "port", "reload") if hasattr(args, key)}
+    if getattr(args, "lan", False):
+        # 只在用户没显式写 --host 时才替他把地址定成 0.0.0.0。
+        # 否则 `--lan --host 192.168.1.5` 会被悄悄放大成"所有网卡"，
+        # 比用户要求的更宽 —— 这种"帮忙"很危险。
+        if "host" not in overrides:
+            overrides["host"] = "0.0.0.0"
+        overrides["allow_remote"] = True
+    if getattr(args, "i_know_what_im_doing", False):
+        overrides["allow_remote"] = True
+
+    settings, notes = config.resolve(args.home, overrides)
+    host = str(settings["host"])
+    port = int(settings["port"])
+    reload_ = bool(settings["reload"])
+
     print(RULE)
     print("  vuln4all 靶场  ——  故意有漏洞，只在本机或隔离环境跑")
     print("  绝不要把它暴露到公网 / 生产网络 / 你能被访问到的任何地址")
     print(RULE)
+
+    for note in notes:
+        print("配置：%s" % note)
+    if notes:
+        print()
+
+    if not config.is_loopback(host) and not settings["allow_remote"]:
+        print(RULE)
+        if config.is_wildcard(host):
+            print("  你正在把靶场绑到 %s —— 同网段的所有人都能连进来打这些漏洞。" % host)
+        else:
+            print("  你正在把靶场绑到 %s —— 那里的人能连进来打这些漏洞。" % host)
+        print()
+        print("  确认要这么做，二选一：")
+        print("    · 命令行加 --lan")
+        print("    · 在 vuln4all.ini 里写 allow_remote = true")
+        print(RULE)
+        return 2
+
     print("挂载情况：")
     print(host_mod.describe_mounts(registry))
 
@@ -73,31 +110,42 @@ def cmd_run(args) -> int:
         for conflict in registry.conflicts:
             print("  !! %s" % conflict)
 
-    if args.host not in LOOPBACK and not args.i_know_what_im_doing:
-        print(RULE)
-        print("  你正在把靶场绑到 %s —— 别人能扫到你这些漏洞。" % args.host)
-        print("  真要这么干，请加上 --i-know-what-im-doing")
-        print(RULE)
-        return 2
-
     app = host_mod.build(registry, args.home)
 
-    shown_host = "127.0.0.1" if args.host in ("0.0.0.0", "::") else args.host
-    print("\n首页：http://%s:%d/" % (shown_host, args.port))
-    print("体检：http://%s:%d/__vuln4all/status\n" % (shown_host, args.port))
+    print()
+    for label, url in config.reachable_urls(host, port, "/"):
+        print("  %-6s %s" % (label, url))
+    for label, url in config.reachable_urls(host, port, "/__vuln4all/status"):
+        print("  %-6s %s" % (label, url))
+
+    if not config.is_loopback(host):
+        print()
+        print(RULE)
+        print("  已经开放到局域网。两件必须知道的事：")
+        print("  1. 所有题目的数据是**共享**的 —— 谁点了「重置」，大家的进度一起清空。")
+        print("     单进程架构就是互相干扰的，多人同时打请各自拿一个副本。")
+        print("  2. 这些漏洞是真的。别把这个地址带到公网、别用真数据、别连生产网。")
+        print(RULE)
+
+    print("\n（Ctrl+C 停止）\n")
+
+    # 显式 flush：nohup / systemd 下 stdout 是块缓冲的，不刷一下的话
+    # 上面这些地址和警告会一直卡在缓冲区里 —— 进程被 kill 就全丢了，
+    # 用户只看到一个"起来了但什么都没说"的空白日志。
+    sys.stdout.flush()
 
     from werkzeug.serving import run_simple
 
     try:
         run_simple(
-            args.host,
-            args.port,
+            host,
+            port,
             app,
-            use_reloader=args.reload,
+            use_reloader=reload_,
             use_debugger=False,
             # 一定要多线程：否则一个请求里再往自己发请求（很多题会这么干）会死锁
             threaded=True,
-            extra_files=registry.watched_files() if args.reload else None,
+            extra_files=registry.watched_files() if reload_ else None,
         )
     except KeyboardInterrupt:
         print("\n已停止。")
@@ -215,15 +263,47 @@ def build_parser() -> argparse.ArgumentParser:
     p_list.add_argument("--category", default=None, help="只看某一类")
     p_list.set_defaults(func=cmd_list)
 
-    p_run = sub.add_parser("run", help="启动靶场")
-    p_run.add_argument("--host", default="127.0.0.1", help="绑定地址，默认只绑本机")
-    p_run.add_argument("--port", type=int, default=DEFAULT_PORT, help="端口，默认 %d" % DEFAULT_PORT)
-    p_run.add_argument("--reload", action="store_true", help="改了模块文件自动重启")
+    p_run = sub.add_parser(
+        "run",
+        help="启动靶场",
+        description="启动靶场。host/port 的优先级：命令行 > vuln4all.ini > 默认值。",
+    )
+    # 默认用 SUPPRESS：这样“用户没写”和“用户写了默认值”能区分开，
+    # 配置文件里的值才有机会生效。
+    p_run.add_argument(
+        "--host",
+        default=argparse.SUPPRESS,
+        help="绑定地址。默认 127.0.0.1（只本机）；0.0.0.0 表示所有网卡",
+    )
+    p_run.add_argument(
+        "--port",
+        type=int,
+        default=argparse.SUPPRESS,
+        help="端口，默认 %d" % DEFAULT_PORT,
+    )
+    p_run.add_argument(
+        "--lan",
+        action="store_true",
+        help="开放到局域网：等价于 --host 0.0.0.0，并且算作“我知道别人能连进来”的确认",
+    )
+    p_run.add_argument(
+        "--reload",
+        action="store_true",
+        default=argparse.SUPPRESS,
+        help="改了模块文件自动重启（开发时用，多人玩的时候别开）",
+    )
+    p_run.add_argument(
+        "--no-reload",
+        dest="reload",
+        action="store_false",
+        default=argparse.SUPPRESS,
+        help="关掉配置文件里的 reload = true",
+    )
     p_run.add_argument(
         "--i-know-what-im-doing",
         dest="i_know_what_im_doing",
         action="store_true",
-        help="允许绑到非本机地址",
+        help="显式指定非本机地址时，用它确认你知道后果（--lan 也能起同样作用）",
     )
     p_run.set_defaults(func=cmd_run)
 

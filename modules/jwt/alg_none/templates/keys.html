@@ -1,0 +1,28 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}API 密钥 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>管理员接口</h1>
+<div class="notice notice-ok">
+  你以 <strong>role=admin</strong> 通过了鉴权 —— <strong>这题通了</strong>。
+</div>
+
+<p class="muted small">
+  服务端认为这份载荷是可信的：<span class="mono">{{ payload }}</span>
+</p>
+
+<h2>API 密钥</h2>
+<table class="findings">
+  <thead><tr><th>服务</th><th>密钥</th></tr></thead>
+  <tbody>
+    {% for name, key in keys.items() %}
+    <tr><th>{{ name }}</th><td class="mono">{{ key }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<p class="muted small">
+  你从头到尾没有拿到任何合法的 admin 凭据。服务端「验签」这一步确实跑了 ——
+  只不过验的是你指定的那个算法。
+</p>
+{% endblock %}

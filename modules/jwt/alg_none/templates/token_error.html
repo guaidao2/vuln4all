@@ -1,0 +1,24 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}接口被拒 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>401 / 403</h1>
+<div class="notice notice-bad">{{ message }}</div>
+
+{% if payload %}
+  <h2>服务端认为你的 token 里是</h2>
+  <table class="findings">
+    <tbody>
+      {% for key, value in payload.items() %}
+      <tr><th>{{ key }}</th><td class="mono">{{ value }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted small">
+    服务端**验过了签名**，才拿到这份载荷。所以问题不在载荷，在于
+    「它是怎么验的」。
+  </p>
+{% endif %}
+
+<p><a href="{{ url_for('index') }}">回去拿 token</a></p>
+{% endblock %}

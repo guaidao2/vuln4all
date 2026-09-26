@@ -1,0 +1,23 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}登录 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>订阅后台 · 登录</h1>
+
+{% if error %}<p class="err">{{ error }}</p>{% endif %}
+
+<form method="post" action="{{ url_for('login') }}">
+  <p><label>用户名<br><input type="text" name="user" value="alice"></label></p>
+  <p><label>密码<br><input type="text" name="password" value="alice123"></label></p>
+  <p><button type="submit" class="btn">登录</button></p>
+</form>
+
+<p class="muted small">
+  演示账号：<span class="mono">alice / alice123</span>（free 套餐）·
+  <span class="mono">bob / bob123</span>（team 套餐）
+</p>
+<p class="muted small">
+  目标：不存在的那个 <span class="mono">admin</span> 身份，或者至少混到
+  <span class="mono">enterprise</span> 套餐。
+</p>
+{% endblock %}

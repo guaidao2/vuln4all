@@ -1,0 +1,17 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}我的身份 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>/api/me</h1>
+<p class="muted">这个接口只是把 token 里的载荷原样返回，方便你对答案。</p>
+<table class="findings">
+  <tbody>
+    {% for key, value in payload.items() %}
+    <tr><th>{{ key }}</th><td class="mono">{{ value }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p class="muted small">
+  这些字段是**你**提供的（在 token 里），服务端只是解出来用。
+</p>
+{% endblock %}

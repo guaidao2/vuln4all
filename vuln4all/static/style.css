@@ -288,6 +288,41 @@ code {
   background: var(--accent-soft);
 }
 
+/* 难度标签：三档一眼能分出来 */
+.badge-diff {
+  font-weight: 550;
+}
+.badge-diff-easy {
+  color: var(--ok);
+  border-color: rgba(61, 220, 151, 0.34);
+  background: var(--ok-soft);
+}
+.badge-diff-medium {
+  color: var(--warn);
+  border-color: rgba(255, 180, 84, 0.34);
+  background: var(--warn-soft);
+}
+.badge-diff-hard {
+  color: var(--bad);
+  border-color: rgba(255, 93, 115, 0.36);
+  background: var(--bad-soft);
+}
+.chip.chip-diff-easy.is-on {
+  color: var(--ok);
+  border-color: rgba(61, 220, 151, 0.45);
+  background: var(--ok-soft);
+}
+.chip.chip-diff-medium.is-on {
+  color: var(--warn);
+  border-color: rgba(255, 180, 84, 0.45);
+  background: var(--warn-soft);
+}
+.chip.chip-diff-hard.is-on {
+  color: var(--bad);
+  border-color: rgba(255, 93, 115, 0.45);
+  background: var(--bad-soft);
+}
+
 .badge-hidden,
 .tag-hidden {
   color: var(--warn);
@@ -492,6 +527,20 @@ code {
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
+  align-items: center;
+}
+
+.chips-label {
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  margin-right: 2px;
+}
+
+.filters {
+  display: grid;
+  gap: 9px;
+  margin: 14px 0 4px;
 }
 
 .chip {

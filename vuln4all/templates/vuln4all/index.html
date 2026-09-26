@@ -26,16 +26,33 @@
         <path d="M20 20l-3.5-3.5"></path>
       </svg>
       <input id="v4a-search" type="search" autocomplete="off"
-             placeholder="搜题目、分类、CWE……" aria-label="搜索题目">
+             placeholder="搜题目、分类、CWE、难度……" aria-label="搜索题目">
     </label>
+  </div>
+
+  <div class="filters">
     <div class="chips" id="v4a-chips">
-      <button type="button" class="chip is-on" data-cat="*">全部</button>
+      <span class="chips-label">分类</span>
+      <button type="button" class="chip is-on" data-group="cat" data-value="*">全部</button>
       {% for category, entries in registry.categories() %}
-        <button type="button" class="chip" data-cat="{{ category }}">
+        <button type="button" class="chip" data-group="cat" data-value="{{ category }}">
           {{ category }}<span class="chip-n">{{ entries | length }}</span>
         </button>
       {% endfor %}
     </div>
+
+    {% if difficulties %}
+    <div class="chips" id="v4a-diffs">
+      <span class="chips-label">难度</span>
+      <button type="button" class="chip is-on" data-group="diff" data-value="*">所有难度</button>
+      {% for level, count in difficulties %}
+        <button type="button" class="chip chip-diff-{{ V4A_DIFF_KEY(level) }}"
+                data-group="diff" data-value="{{ level }}">
+          {{ level }}<span class="chip-n">{{ count }}</span>
+        </button>
+      {% endfor %}
+    </div>
+    {% endif %}
   </div>
 
   {% for category, entries in registry.categories() %}
@@ -46,14 +63,19 @@
     </header>
     <ul class="cards">
       {% for entry in entries %}
-      <li class="card{% if not entry.ok %} card-bad{% endif %}">
+      <li class="card{% if not entry.ok %} card-bad{% endif %}"
+          data-diff="{{ entry.info.difficulty or '*' }}">
         {% if entry.ok %}
           <a class="card-title" href="{{ entry.main_path }}/">{{ entry.display_name }}</a>
           <div class="card-meta">
             <span class="mono">{{ entry.id }}</span>
+            {% if entry.info.difficulty %}
+              <span class="badge badge-diff badge-diff-{{ V4A_DIFF_KEY(entry.info.difficulty) }}">{{ entry.info.difficulty }}</span>
+            {% endif %}
             {% if entry.info.cwe %}<span class="badge badge-cwe">{{ entry.info.cwe }}</span>{% endif %}
             {% for mount in entry.hidden_mounts %}
-              <span class="badge badge-hidden" title="{{ mount.path }}">隐藏入口</span>
+              {#- 故意不显示路径：隐藏入口的路径不该从清单页泄露出去 -#}
+              <span class="badge badge-hidden">隐藏入口</span>
             {% endfor %}
           </div>
           {% if entry.info.description %}
@@ -116,23 +138,25 @@ python main.py doctor              # 检查写得合不合规</pre>
 <script>
 (function () {
   var input = document.getElementById('v4a-search');
-  var chips = Array.prototype.slice.call(document.querySelectorAll('#v4a-chips .chip'));
   var cats = Array.prototype.slice.call(document.querySelectorAll('.cat'));
   var empty = document.getElementById('v4a-empty');
-  var active = '*';
+  var active = { cat: '*', diff: '*' };
 
   function apply() {
     var q = (input.value || '').trim().toLowerCase();
     var shown = 0;
 
     cats.forEach(function (cat) {
-      var catOk = active === '*' || cat.getAttribute('data-cat') === active;
+      var catOk = active.cat === '*' || cat.getAttribute('data-cat') === active.cat;
       var cards = Array.prototype.slice.call(cat.querySelectorAll('.card'));
       var catShown = 0;
 
       cards.forEach(function (card) {
-        var hit = !q || card.textContent.toLowerCase().indexOf(q) !== -1;
-        var ok = catOk && hit;
+        var textOk = !q || card.textContent.toLowerCase().indexOf(q) !== -1;
+        var diff = card.getAttribute('data-diff') || '*';
+        // 加载失败的卡片带 data-diff="*"，任何难度筛选下都留着 —— 那是诊断信息
+        var diffOk = active.diff === '*' || diff === active.diff || diff === '*';
+        var ok = catOk && textOk && diffOk;
         card.hidden = !ok;
         if (ok) { catShown++; shown++; }
       });
@@ -145,10 +169,14 @@ python main.py doctor              # 检查写得合不合规</pre>
 
   if (input) { input.addEventListener('input', apply); }
 
-  chips.forEach(function (chip) {
+  Array.prototype.forEach.call(document.querySelectorAll('.chip'), function (chip) {
     chip.addEventListener('click', function () {
-      active = chip.getAttribute('data-cat');
-      chips.forEach(function (c) { c.classList.toggle('is-on', c === chip); });
+      var group = chip.getAttribute('data-group');
+      active[group] = chip.getAttribute('data-value');
+      Array.prototype.forEach.call(
+        document.querySelectorAll('.chip[data-group="' + group + '"]'),
+        function (other) { other.classList.toggle('is-on', other === chip); }
+      );
       apply();
     });
   });

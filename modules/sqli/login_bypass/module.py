@@ -15,6 +15,7 @@ class LoginBypass(Vuln):
         "author": ["guaidao2"],
         "cwe": "CWE-89",
         "owasp": "A03:2021 - Injection",
+        "difficulty": "入门",
         "description": (
             "登录页把用户名和密码直接拼进了 SQL 语句，没有任何参数化。"
             "你可以构造输入，让这条查询无论如何都返回一行 —— 于是不用密码就进去了。"

@@ -21,6 +21,7 @@ class AvatarUpload(Vuln):
         "author": ["guaidao2"],
         "cwe": "CWE-434",
         "owasp": "A03:2021 - Injection",
+        "difficulty": "进阶",
         "description": (
             "上传头像的地方做了两道检查：后缀不能在黑名单里、Content-Type 必须是图片。"
             "两道都经不起推敲 —— 一道大小写敏感，一道完全听客户端的。"

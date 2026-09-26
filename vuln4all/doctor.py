@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import List
 
-from .contract import RECOMMENDED_INFO
+from .contract import DIFFICULTIES, RECOMMENDED_INFO
 from .loader import ENTRY_FILE
 from .registry import Registry
 
@@ -87,6 +87,18 @@ def check(registry: Registry, smoke: bool = True) -> List[Finding]:
                 findings.append(
                     Finding(INFO, entry.id, "建议补上 info[%r]，会影响清单页和教学体验" % key)
                 )
+
+        # 难度只是个标签，填错了不影响运行 —— 所以只提醒，不当错误
+        difficulty = str(entry.info.get("difficulty", "")).strip()
+        if difficulty and difficulty not in DIFFICULTIES:
+            findings.append(
+                Finding(
+                    WARN,
+                    entry.id,
+                    "info['difficulty'] = %r 不在常用档位里（%s），清单页上不会上色"
+                    % (difficulty, " / ".join(DIFFICULTIES)),
+                )
+            )
 
         findings.extend(_check_source(entry))
         findings.extend(_check_workspace(entry, probe=smoke))

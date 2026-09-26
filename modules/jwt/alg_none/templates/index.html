@@ -1,0 +1,37 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}开放 API 平台 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>开放 API 平台</h1>
+<p class="muted">登录拿 token，之后用 <code>Authorization: Bearer &lt;token&gt;</code> 调接口。</p>
+
+{% if error %}<div class="notice notice-bad">{{ error }}</div>{% endif %}
+
+<form method="post" action="{{ url_for('index') }}">
+  <p><label>用户名<br><input type="text" name="user" value="analyst"></label></p>
+  <p><label>密码<br><input type="text" name="password" value="analyst123"></label></p>
+  <p><button type="submit" class="btn">登录并签发 token</button></p>
+</form>
+
+<p class="muted small">
+  演示账号：<span class="mono">analyst / analyst123</span>（viewer）·
+  <span class="mono">ops / ops123</span>（operator）
+</p>
+
+{% if token %}
+  <h2>你的 token</h2>
+  <pre class="payload">{{ token }}</pre>
+  <p class="muted small">解出来的载荷：<span class="mono">{{ claims }}</span></p>
+
+  <h2>拿它调接口</h2>
+  <pre class="payload">curl '{{ base }}/api/me' \
+  -H 'Authorization: Bearer {{ token }}'
+
+curl '{{ base }}/api/admin/keys' \
+  -H 'Authorization: Bearer {{ token }}'</pre>
+  <p class="muted small">
+    目标：让 <code>/api/admin/keys</code> 返回东西。它要求 <code>role=admin</code> ——
+    而你的账号里根本没有这个角色。所以你得想办法让服务端**相信**你有。
+  </p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,41 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}网络诊断 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>网络诊断 / 连通性检测</h1>
+<p class="muted">输入主机名，服务端会执行一次 ping 并把输出贴回来。</p>
+
+<form method="post" action="{{ url_for('index') }}">
+  <p>
+    <input type="text" name="host" value="{{ host }}" placeholder="例如 127.0.0.1 或 内网网关">
+    <button type="submit" class="btn">开始检测</button>
+  </p>
+</form>
+
+<p class="muted small">
+  常用目标：
+  {% for item in quick %}
+    <span class="mono">{{ item }}</span>{% if not loop.last %} · {% endif %}
+  {% endfor %}
+</p>
+
+{% if hit %}
+  <div class="notice notice-ok">
+    输出里出现了 <code>uid=</code> —— 你执行的<strong>不是 ping</strong>。
+    <strong>这题通了。</strong>
+  </div>
+{% endif %}
+
+{% if command %}
+  <h2>服务端实际执行的命令</h2>
+  <pre class="payload">{{ command }}</pre>
+  <p class="muted small">
+    这行是回显给你看的 —— 真实系统上不会告诉你，但你从行为上能推出来。
+  </p>
+{% endif %}
+
+{% if output is not none %}
+  <h2>命令输出</h2>
+  <pre class="payload">{{ output }}</pre>
+{% endif %}
+{% endblock %}

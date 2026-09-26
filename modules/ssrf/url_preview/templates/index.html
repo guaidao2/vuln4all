@@ -1,0 +1,44 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}链接预览 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>链接预览</h1>
+<p class="muted">贴一个图片链接，服务端会去抓回来生成预览。</p>
+
+<form method="post" action="{{ url_for('index') }}">
+  <p>
+    <input type="text" name="url" value="{{ url }}" style="width:100%;min-width:0"
+           placeholder="https://{{ allow_token }}/cat.png">
+    <button type="submit" class="btn">生成预览</button>
+  </p>
+</form>
+
+<p class="muted small">
+  只允许抓取 <span class="mono">{{ allow_token }}</span> 上的图片。
+</p>
+
+{% if parsed_host %}
+  <h2>服务端解析出的主机</h2>
+  <pre class="payload">{{ parsed_host }}</pre>
+  <p class="muted small">
+    这一行是给你对答案用的：校验放过的是**整串字符串**，而真正被连接的是上面这个主机。
+    两者可以不等于 —— 那就是洞。真实系统不会告诉你这些，你只能从行为上推。
+  </p>
+{% endif %}
+
+{% if error %}
+  <div class="notice notice-bad">{{ error }}</div>
+{% endif %}
+
+{% if hit %}
+  <div class="notice notice-ok">
+    你抓到的是<strong>内网管理后台</strong> —— 一个只允许服务器本机访问的页面。
+    <strong>这题通了。</strong>
+  </div>
+{% endif %}
+
+{% if body is not none %}
+  <h2>抓取到的内容</h2>
+  <pre class="payload">{{ body }}</pre>
+{% endif %}
+{% endblock %}

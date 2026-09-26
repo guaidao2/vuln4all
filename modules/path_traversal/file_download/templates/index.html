@@ -1,0 +1,35 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}共享文档 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>共享文档</h1>
+<p class="muted">点文件名就能下载。<code>/download?name=&lt;文件名&gt;</code></p>
+
+<table class="findings">
+  <thead><tr><th>文件名</th><th>下载</th></tr></thead>
+  <tbody>
+    {% for name in names %}
+    <tr>
+      <td>{{ name }}</td>
+      <td><a class="mono" href="{{ url_for('download') }}?name={{ name | urlencode }}">下载</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if error %}
+  <h2>出错了</h2>
+  <pre class="payload">{{ error }}</pre>
+  {% if tried %}
+    <p class="muted small">服务器尝试打开的绝对路径是：</p>
+    <pre class="payload">{{ tried }}</pre>
+    <p class="muted small">
+      这一行本身就是个信息泄露 —— 它告诉了你目录结构，帮你数清楚要写几个
+      <code>../</code>。
+    </p>
+  {% endif %}
+  {% if name %}
+    <p class="muted small">你提交的 name：<span class="mono">{{ name }}</span></p>
+  {% endif %}
+{% endif %}
+{% endblock %}

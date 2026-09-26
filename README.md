@@ -18,12 +18,33 @@
 python3 main.py
 ```
 
-就这一条。默认只绑 `127.0.0.1:8800`。想绑到别的地址必须显式加
-`--i-know-what-im-doing`，否则它会拒绝启动。
+就这一条。默认只绑 `127.0.0.1:8800`。
+
+**局域网一起打（多人）：**
+
+```bash
+python3 main.py --lan            # 等价于绑 0.0.0.0，并算作"我知道别人能连进来"
+```
+
+启动后会把**本机**和**局域网**两种地址都打出来，直接把局域网那个发给人就行。
+
+更省事的办法是写一份配置文件，以后 `python3 main.py` 就按它跑：
+
+```bash
+cp vuln4all.ini.example vuln4all.ini
+# 然后改里面的 host / port / allow_remote
+```
+
+优先级：**命令行 > `vuln4all.ini` > 默认值**。
+
+> ⚠️ 开放到局域网后有两件事必须知道：
+> 1. **所有题目的数据是共享的** —— 谁点了「重置」，大家的进度一起清空。
+>    单进程架构就是互相干扰的，多人同时打请各自拿一份副本。
+> 2. 这些漏洞是真的。别带到公网、别用真数据、别连生产网。
 
 然后打开 <http://127.0.0.1:8800/>：
 
-- `/` —— 题目清单（自动生成，按分类分组，带搜索和分类筛选）
+- `/` —— 题目清单（自动生成，按分类分组，带搜索 + 分类筛选 + 难度筛选）
 - `/__vuln4all/status` —— 体检页
 - 每道题的页面顶部都有「重置这题」按钮，以及「提示」/「答案」两个折叠区
 
@@ -32,7 +53,8 @@ python3 main.py
 `main.py` 是主入口，不带子命令就是启动靶场：
 
 ```bash
-python3 main.py                        # 启动靶场
+python3 main.py                        # 启动靶场（127.0.0.1:8800）
+python3 main.py --lan                  # 开放到局域网
 python3 main.py --port 9000            # 换端口
 python3 main.py list                   # 列出所有题目
 python3 main.py list --category sqli   # 只看某一类
@@ -111,6 +133,7 @@ class LoginBypass(Vuln):
 |---|---|
 | `name` / `description` | **必填** |
 | `author` / `cwe` / `owasp` / `refs` | 推荐填，清单页和题页面会展示 |
+| `difficulty` | 推荐填，`入门` / `进阶` / `困难` —— 只是个**标签**，core 不为它做任何机制。填别的值也能跑，doctor 会提醒一句 |
 | `hint` / `solution` | 推荐填，会渲染成可折叠区 —— 教学靶场的灵魂 |
 | `mounts` | 覆盖挂载路径、标记隐藏入口，见下 |
 
@@ -188,8 +211,10 @@ ctx.url("attacker", "/")       # -> /evil-site/
 ```
 vuln4all/
 ├── main.py                      # 主入口：python3 main.py 就是启动靶场
+├── vuln4all.ini.example         # 运行配置模板（复制成 vuln4all.ini 生效）
 ├── vuln4all/                    # core
 │   ├── contract.py              #   Vuln 基类 + Ctx（模块契约）
+│   ├── config.py                #   运行配置（host/port）+ 本机 IP 探测
 │   ├── registry.py              #   发现 modules/、加载、算挂载点、查冲突
 │   ├── loader.py                #   importlib 动态导入，坏模块不拖垮全家
 │   ├── host.py                  #   前缀分发，拼成一个 WSGI 应用
@@ -200,16 +225,40 @@ vuln4all/
 │   ├── templates/vuln4all/      #   统一外壳 base.html 等
 │   └── static/style.css         #   设计系统
 ├── modules/                     # ← 题目都在这儿，一个目录一道题
-│   ├── sqli/login_bypass/
-│   ├── csrf/password_change/
-│   ├── xss/reflect_search/
-│   ├── idor/order_detail/
-│   └── upload/avatar/
+│   ├── sqli/login_bypass/             入门
+│   ├── xss/reflect_search/            入门
+│   ├── idor/order_detail/             入门
+│   ├── path_traversal/file_download/  入门
+│   ├── ssti/jinja2_profile/           入门（Python 独有）
+│   ├── csrf/password_change/          进阶
+│   ├── upload/avatar/                 进阶
+│   ├── command_injection/ping_tool/   进阶
+│   ├── ssrf/url_preview/              进阶（双挂载点）
+│   ├── flask_session/forged_cookie/   进阶（Python 独有）
+│   ├── race_condition/coupon_redeem/  困难
+│   └── jwt/alg_none/                  困难
 ├── tools/                       # 开发/验证工具
 │   ├── deploy.py                #   推到远端主机验证（本机不跑靶场）
 │   └── verify.sh                #   端到端验证：起靶场 + 逐题打一遍
 └── workspace/                   # 运行时生成，每道题的私有数据，随时能删
 ```
+
+## 题目一览
+
+| 难度 | 题目 | 业务场景 | 洞在哪 |
+|---|---|---|---|
+| 入门 | `sqli/login_bypass` | 员工登录页 | 字符串拼接 SQL，`admin' --` |
+| 入门 | `xss/reflect_search` | 站内搜索 | `\|safe` 关掉了 Jinja 自动转义 |
+| 入门 | `idor/order_detail` | 订单中心 | 只按订单号查，不查归属 |
+| 入门 | `path_traversal/file_download` | 企业网盘 | `os.path.join` 被 `../` 和绝对路径顶穿 |
+| 入门 | `ssti/jinja2_profile` | 团队协作 SaaS | 用户输入被当 Jinja2 模板渲染 |
+| 进阶 | `csrf/password_change` | 个人中心 + 攻击者站 | 改密码接口不看请求来源 |
+| 进阶 | `upload/avatar` | 头像上传 | 后缀黑名单大小写敏感 + 信客户端 Content-Type |
+| 进阶 | `command_injection/ping_tool` | 运维诊断面板 | 用户输入拼进 shell 命令 |
+| 进阶 | `ssrf/url_preview` | 聊天链接预览 | 白名单只做子串匹配，`@` 骗过校验 |
+| 进阶 | `flask_session/forged_cookie` | 订阅制 SaaS 后台 | 弱密钥硬编码，session 可以自己签 |
+| 困难 | `race_condition/coupon_redeem` | 限时优惠券 | check-then-act 不原子，并发领取 |
+| 困难 | `jwt/alg_none` | 开放 API 平台 | 验签算法从 token 自己声明的 `alg` 里读 |
 
 ## 前端
 

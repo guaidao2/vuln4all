@@ -1,0 +1,52 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}团队欢迎语 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>团队欢迎语设置</h1>
+<p class="muted">
+  支持 <code>{{ "{{ user }}" }}</code> 和 <code>{{ "{{ team }}" }}</code> 两个变量。
+</p>
+
+<form method="post" action="{{ url_for('index') }}">
+  <p>
+    <textarea name="template" rows="4" style="width:100%;min-width:0">{{ template }}</textarea>
+  </p>
+  <p>
+    <button type="submit" class="btn">保存并预览</button>
+    <a class="btn btn-ghost" href="{{ url_for('reset_template') }}">恢复默认</a>
+  </p>
+</form>
+
+{% if error %}
+  <h2>渲染出错了</h2>
+  <pre class="payload">{{ error }}</pre>
+  <p class="muted small">
+    报错本身就有用 —— 它会告诉你模板引擎在哪一行、期待什么语法。
+  </p>
+{% endif %}
+
+{% if rendered is not none %}
+  <h2>预览效果</h2>
+  <pre class="payload">{{ rendered }}</pre>
+{% endif %}
+
+<h2>里程碑</h2>
+{% if all_done %}
+  <div class="notice notice-ok">三个里程碑都打到了 —— <strong>这题通了</strong>，而且你真的拿到了命令执行。</div>
+{% endif %}
+<table class="findings">
+  <thead><tr><th>状态</th><th>里程碑</th><th>说明了什么</th></tr></thead>
+  <tbody>
+    {% for m in milestones %}
+    <tr>
+      <td>{% if m.done %}<span class="ok">已达成</span>{% else %}<span class="muted">未达成</span>{% endif %}</td>
+      <td>{{ m.name }}</td>
+      <td class="muted">{{ m.why }}</td>
+    </tr>
+    {% endfor %}
+    {% if not milestones %}
+    <tr><td colspan="3" class="muted">提交一次欢迎语，这里会记录你打到哪一步了。</td></tr>
+    {% endif %}
+  </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,39 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}限时优惠券 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>限时优惠券</h1>
+<p class="muted">每人限领一张，面值 ￥{{ amount }}。</p>
+
+<table class="findings">
+  <tbody>
+    <tr><th>我的余额</th><td class="mono">￥{{ balance }}</td></tr>
+    <tr><th>成功领取次数</th><td class="mono">{{ redeemed }}</td></tr>
+    <tr><th>接口被调用次数</th><td class="mono">{{ attempts }}</td></tr>
+  </tbody>
+</table>
+
+{% if balance > amount %}
+  <div class="notice notice-ok">
+    你领到了不止一张（余额 ￥{{ balance }} &gt; 单张 ￥{{ amount }}）
+    —— <strong>这题通了</strong>。
+  </div>
+  <p class="muted small">
+    注意「接口被调用次数」和「成功领取次数」的关系：
+    不是所有请求都成功了，但成功的比允许的多。
+  </p>
+{% endif %}
+
+<form method="post" action="{{ url_for('redeem') }}">
+  <p><button type="submit" class="btn">领取优惠券</button></p>
+</form>
+
+<p class="muted small">
+  先手动点一次看看反应。然后想办法让**多个请求在时间上重叠** ——
+  一次一个慢慢点是不可能的。
+</p>
+<p class="muted small">
+  这题的服务端判断和加钱之间隔了大约 {{ window }} 毫秒。真实系统里这个窗口小得多，
+  （微秒级），但一样存在 —— 只是需要更高的并发或更精准的时间对齐。
+</p>
+{% endblock %}

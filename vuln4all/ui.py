@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 from flask import Flask, redirect, render_template, request, url_for
 
 from . import doctor as doctor_mod
+from .contract import DIFFICULTIES, difficulty_key
 from .registry import Registry
 
 STATIC_URL_PATH = "/__vuln4all/static"
@@ -17,6 +18,18 @@ RESET_URL = "/__vuln4all/reset"
 RESET_DONE_URL = "/__vuln4all/reset-done"
 
 DANGER_BANNER = "这是故意留洞的靶场。只在本机或隔离环境跑，绝不要暴露到公网或生产网络。"
+
+
+def _difficulty_breakdown(registry: Registry) -> "list":
+    """[(难度, 题数)] —— 按 DIFFICULTIES 的顺序排，没填难度的模块不计入。"""
+    counts: dict = {}
+    for entry in registry.loaded():
+        level = str(entry.info.get("difficulty", "")).strip()
+        if level:
+            counts[level] = counts.get(level, 0) + 1
+    known = [(d, counts.pop(d)) for d in DIFFICULTIES if d in counts]
+    # 非标准档位也让它出现在筛选项里，别悄悄吞掉
+    return known + sorted(counts.items())
 
 
 def _safe_next(value: str) -> str:
@@ -76,6 +89,7 @@ def create_core_app(registry: Registry, home: Path) -> Flask:
         V4A_STATIC=STATIC_URL_PATH,
         V4A_STATUS=STATUS_URL,
         V4A_RESET=RESET_URL,
+        V4A_DIFF_KEY=difficulty_key,
         V4A_BANNER=DANGER_BANNER,
     )
     app.config["HOME"] = str(home)
@@ -83,7 +97,10 @@ def create_core_app(registry: Registry, home: Path) -> Flask:
     @app.route("/")
     def index():
         return render_template(
-            "vuln4all/index.html", registry=registry, title="vuln4all 靶场"
+            "vuln4all/index.html",
+            registry=registry,
+            difficulties=_difficulty_breakdown(registry),
+            title="vuln4all 靶场",
         )
 
     @app.route(STATUS_URL)

@@ -15,6 +15,7 @@ class OrderDetail(Vuln):
         "author": ["guaidao2"],
         "cwe": "CWE-639",
         "owasp": "A01:2021 - Broken Access Control",
+        "difficulty": "入门",
         "description": (
             "订单详情页用 URL 里的订单号直接去查数据，查到了就给你看 —— "
             "完全没检查这个订单是不是你的。"
