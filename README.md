@@ -315,4 +315,4 @@ vuln4all/
 
 ## License
 
-MIT · © guaidao2
+MIT，全文见 [LICENSE](LICENSE)。
