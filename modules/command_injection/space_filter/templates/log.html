@@ -1,0 +1,21 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}执行记录 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>诊断工具执行记录</h1>
+
+{% if hit %}
+  <div class="notice notice-ok">
+    记录里出现了内部资料那串凭据 —— <strong>这题通了。</strong>
+  </div>
+{% endif %}
+
+<p class="muted small">
+  这个文件是应用自己写的：每执行一次命令就追加一条。
+  所以你读到的文件内容也会被记在这里 —— 而这一题的判定就是看这里。
+</p>
+
+<pre class="payload">{{ text }}</pre>
+
+<p><a href="{{ url_for('index') }}">回到诊断面板</a></p>
+{% endblock %}

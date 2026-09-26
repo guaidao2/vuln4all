@@ -474,21 +474,26 @@ return {"": portal, "attacker": ctx.flask(__name__, mount="attacker")}
 
 ## 12. 照着现成的题写
 
-仓库里 12 道题都是按这份契约写的，可以直接拿来对照：
+仓库里 24 道题都是按这份契约写的，可以直接拿来对照：
 
 ```
 modules/sqli/login_bypass/            字符串拼接 SQL（含 sqlite + seed）
 modules/sqli/union_query/             拼 SQL 但**不回显报错**（教"数不清列数时的排查"）
 modules/sqli/time_blind/              create_function 注册自定义 SQL 函数 + 只靠耗时判定
+modules/sqli/keyword_filter/          模块内自带一份正则规则表当过滤器（拦截式）
 modules/xss/reflect_search/           最简：一个模板 + 一个路由
 modules/xss/stored_guestbook/         写库再渲染（check() 直接从库推）
 modules/xss/dom_based/                服务端不输出 payload；页面自己回报命中
+modules/xss/tag_filter/               删除式过滤器 + 一个独立的判定检测器
 modules/csrf/password_change/         多挂载点：受害者站 + 攻击者站
 modules/csrf/json_api/                多挂载点 + 不看 Content-Type 的 JSON 接口
 modules/ssrf/url_preview/             多挂载点 + 隐藏入口 + 自己发 HTTP 请求
+modules/ssrf/ip_format_filter/        多挂载点 + 隐藏入口 + 只做字符串匹配的地址校验
 modules/upload/avatar/                往 workspace 里写文件 + check() 从状态推
 modules/upload/zip_slip/              手写解压循环 + 受保护文件的内容比对
 modules/idor/admin_endpoint/          session 里的角色 + 前端隐藏的入口
+modules/path_traversal/encoding_filter/ 双重解码 + 应用自己写下载逻辑
+modules/command_injection/space_filter/ shell=True 起子进程 + check() 读应用自己写的日志
 modules/race_condition/coupon_redeem/ 模块级内存状态 + 自己实现 reset()
 modules/jwt/alg_none/                 手搓 JWT（不引入额外依赖）
 ```

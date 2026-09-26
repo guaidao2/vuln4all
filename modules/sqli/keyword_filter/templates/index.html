@@ -1,0 +1,76 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}员工名录 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>员工名录搜索</h1>
+
+<form method="post" action="{{ url_for('index') }}">
+  <p>
+    <input type="text" name="keyword" value="{{ keyword }}" style="min-width:340px"
+           placeholder="输入姓名的一部分，比如「张」">
+    <button type="submit" class="btn">搜索</button>
+  </p>
+</form>
+
+{% if blocked %}
+  <div class="notice notice-bad">
+    被安全策略拦截。<br>
+    命中的规则：<strong>{{ blocked }}</strong>
+  </div>
+  <p class="muted small">
+    这一题的过滤器按顺序跑这几条规则，命中就拦：
+    {% for r in rules %}<span class="mono">{{ r }}</span>{% if not loop.last %} · {% endif %}{% endfor %}
+  </p>
+{% elif keyword %}
+  <div class="notice notice-ok">关键词通过了过滤器。</div>
+{% endif %}
+
+{% if leaked %}
+  <div class="notice notice-ok">
+    结果里出现了<strong>不属于员工表</strong>的东西 —— 过滤器被绕过了。
+  </div>
+{% endif %}
+
+{% if rows %}
+  <h2>找到 {{ rows | length }} 条</h2>
+  <table class="findings">
+    <thead><tr><th>姓名</th><th>部门</th><th>分机</th></tr></thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row[0] }}</td>
+        <td>{{ row[1] }}</td>
+        <td class="mono">{{ row[2] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  {% if keyword and not blocked %}
+    <p class="muted">没有匹配的员工。</p>
+  {% elif not keyword %}
+    <p class="muted">试试搜「张」。</p>
+  {% endif %}
+{% endif %}
+
+<h2>把 admin 的密码取出来</h2>
+<form method="post" action="{{ url_for('index') }}">
+  <p>
+    <input type="text" name="guess" value="" placeholder="从结果里读到的那串密码">
+    <button type="submit" class="btn">提交</button>
+  </p>
+</form>
+
+{% if feedback %}
+  {% if feedback[0] == 'ok' %}
+    <div class="notice notice-ok">{{ feedback[1] }}<strong>这题通了。</strong></div>
+  {% else %}
+    <div class="notice notice-bad">{{ feedback[1] }}</div>
+  {% endif %}
+{% endif %}
+
+<p class="muted small">
+  这一题的注入手法跟前面两道是同一个洞。多出来的是上面那层过滤 ——
+  真正的考点是<b>每一条规则各自漏了什么</b>。
+</p>
+{% endblock %}

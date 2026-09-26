@@ -1,0 +1,43 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}链接预览 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>聊天链接预览</h1>
+<p class="muted small">
+  粘贴一个链接，服务端会自己去抓它来生成预览卡片。
+</p>
+
+<form method="post" action="{{ url_for('index') }}">
+  <p>
+    <input type="text" name="url" value="{{ url }}" style="min-width:420px"
+           placeholder="http://example.com/article">
+    <button type="submit" class="btn">生成预览</button>
+  </p>
+</form>
+
+{% if blocked %}
+  <div class="notice notice-bad">
+    被安全策略拦截。命中的规则：<strong>{{ blocked }}</strong>
+  </div>
+  <p class="muted small">
+    过滤器按顺序跑这几条规则（匹配的是 URL 里的 host）：
+    {% for r in rules %}<span class="mono">{{ r }}</span>{% if not loop.last %} · {% endif %}{% endfor %}
+  </p>
+{% endif %}
+
+{% if preview %}
+  <div class="notice notice-ok">通过了过滤器。</div>
+  <h2>抓回来的内容</h2>
+  <pre class="payload">{{ preview }}</pre>
+{% endif %}
+
+<h2>内网管理后台</h2>
+<p class="muted small">
+  这个服务的地址是 <span class="mono">{{ intranet_root }}</span>（端口和当前页面一样）。
+  它**没有做任何认证**，唯一的保护就是上面那份 host 黑名单 ——
+  外网访问不到它，因为根本没人能从外面连上内网地址。
+</p>
+<p class="muted small">
+  预览服务跑在同一台机器上，所以对它来说「内网」就是本机。
+</p>
+{% endblock %}

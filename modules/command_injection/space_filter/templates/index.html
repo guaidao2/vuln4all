@@ -1,0 +1,54 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}网络诊断 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>运维面板 · 网络诊断</h1>
+
+<form method="post" action="{{ url_for('index') }}">
+  <p>
+    <input type="text" name="target" value="{{ target }}" style="min-width:380px"
+           placeholder="要测的主机，比如 127.0.0.1">
+    <button type="submit" class="btn">开始 ping</button>
+  </p>
+</form>
+
+{% if blocked %}
+  <div class="notice notice-bad">
+    被安全策略拦截。命中的规则：<strong>{{ blocked }}</strong>
+  </div>
+  <p class="muted small">
+    过滤器按顺序跑这几条规则：{% for r in rules %}<span class="mono">{{ r }}</span>{% if not loop.last %} · {% endif %}{% endfor %}
+  </p>
+{% endif %}
+
+{% if command %}
+  <div class="notice notice-ok">通过了过滤器。</div>
+  <h2>实际执行的命令</h2>
+  <pre class="payload">{{ command }}</pre>
+  <h2>输出</h2>
+  <pre class="payload">{{ output }}</pre>
+{% endif %}
+
+<h2>应用数据目录</h2>
+<table class="findings">
+  <tbody>
+    <tr><th>诊断日志目录</th><td class="mono">{{ log_dir }}</td></tr>
+    <tr><th>执行记录文件</th><td class="mono">{{ log_path }}</td></tr>
+    <tr><th>内部资料目录</th><td class="mono">{{ secret_path }}</td></tr>
+  </tbody>
+</table>
+<p class="muted small">
+  「内部资料」那个文件不在 web 目录下，正常访问拿不到 —— 只能靠命令执行去读。
+  它一旦被读出来，内容会连同命令输出一起写进执行记录。
+</p>
+<p><a href="{{ url_for('log') }}">看完整执行记录</a></p>
+
+<form method="post" action="{{ url_for('reset_log') }}" style="margin-top:14px">
+  <button type="submit" class="btn btn-ghost">清空执行记录</button>
+</form>
+
+<p class="muted small">
+  这个面板跑在 <span class="mono">/bin/sh</span> 上，拼命令用的是
+  <span class="mono">shell=True</span>。
+</p>
+{% endblock %}

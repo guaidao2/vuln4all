@@ -1,0 +1,28 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}内网管理后台 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>内网管理后台</h1>
+
+<div class="notice notice-ok">
+  你让**服务端自己**连到了这里 —— <strong>这题通了。</strong>
+  这个地址从外面是连不上的，只有从这台机器内部才够得着。
+</div>
+
+<h2>接口令牌</h2>
+<pre class="payload">{{ marker }}</pre>
+<p class="muted small">
+  这一串就是判定用的标记。它出现在预览结果里，就说明预览服务替你连进来了。
+</p>
+
+<h2>管理功能</h2>
+<ul>
+  <li>用户管理</li>
+  <li>日志导出</li>
+  <li>定时任务</li>
+</ul>
+<p class="muted small">
+  这个后台没有任何认证 —— 因为它假设"能从内网访问的人"本身就是可信的。
+  这个假设就是 SSRF 的全部价值所在。
+</p>
+{% endblock %}

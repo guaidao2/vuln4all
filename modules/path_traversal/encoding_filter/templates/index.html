@@ -1,0 +1,56 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}文件下载 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>共享文件下载</h1>
+
+<h2>共享目录里的文件</h2>
+<ul class="cards">
+  {% for f in files %}
+  <li class="card">
+    <a class="card-title" href="{{ url_for('download') }}?file={{ f }}">{{ f }}</a>
+  </li>
+  {% endfor %}
+</ul>
+
+<form action="{{ url_for('download') }}" method="get">
+  <p>
+    <input type="text" name="file" value="" style="min-width:400px"
+           placeholder="也可以直接填文件名">
+    <button type="submit" class="btn">下载</button>
+  </p>
+</form>
+
+{% if blocked %}
+  <div class="notice notice-bad">
+    被安全策略拦截。命中的规则：<strong>{{ blocked }}</strong>
+  </div>
+  <p class="muted small">
+    过滤器按顺序跑这几条规则：{% for r in rules %}<span class="mono">{{ r }}</span>{% if not loop.last %} · {% endif %}{% endfor %}
+  </p>
+{% endif %}
+
+{% if result %}
+  <div class="notice notice-ok">通过了过滤器。</div>
+  <h2>这次请求经过的处理</h2>
+  <table class="findings">
+    <tbody>
+      <tr><th>过滤器看到的值</th><td class="mono">{{ raw }}</td></tr>
+      <tr><th>应用最终拿去拼路径的值</th><td class="mono">{{ decoded }}</td></tr>
+    </tbody>
+  </table>
+  <p class="muted small">
+    对比上面两行 —— <b>它们不是同一个字符串。</b>
+    这两者之间的差距就是这一题的绕过空间。
+  </p>
+
+  <h2>{{ result['name'] }}</h2>
+  <pre class="payload">{{ result['content'] }}</pre>
+{% endif %}
+
+<p class="muted small">
+  下载目录是 <span class="mono">{{ shared_dir }}</span>。
+  同级的 <span class="mono">{{ private_dir }}/</span> 里放着后台凭据
+  <span class="mono">{{ token_file }}</span> —— 那个文件不该被下载到。
+</p>
+{% endblock %}

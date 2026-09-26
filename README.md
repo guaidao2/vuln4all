@@ -232,19 +232,24 @@ vuln4all/
 │   ├── sqli/login_bypass/             入门
 │   ├── sqli/union_query/              进阶
 │   ├── sqli/time_blind/               困难
+│   ├── sqli/keyword_filter/           困难（关键词过滤绕过）
 │   ├── xss/reflect_search/            入门
 │   ├── xss/stored_guestbook/          入门
 │   ├── xss/dom_based/                 进阶
+│   ├── xss/tag_filter/                困难（标签过滤绕过）
 │   ├── idor/order_detail/             入门
 │   ├── idor/admin_endpoint/           进阶
 │   ├── path_traversal/file_download/  入门
+│   ├── path_traversal/encoding_filter/ 困难（编码过滤绕过）
 │   ├── ssti/jinja2_profile/           入门（Python 独有）
 │   ├── csrf/password_change/          进阶
 │   ├── csrf/json_api/                 进阶（双挂载点）
 │   ├── upload/avatar/                 进阶
 │   ├── upload/zip_slip/               困难
 │   ├── command_injection/ping_tool/   进阶
+│   ├── command_injection/space_filter/ 困难（分隔符过滤绕过）
 │   ├── ssrf/url_preview/              进阶（双挂载点）
+│   ├── ssrf/ip_format_filter/         困难（IP 写法绕过，双挂载点）
 │   ├── flask_session/forged_cookie/   进阶（Python 独有）
 │   ├── race_condition/coupon_redeem/  困难
 │   └── jwt/alg_none/                  困难
@@ -257,6 +262,10 @@ vuln4all/
 同一个分类下可以有多道题。SQLi 那三道放在一起是有意的：它们教的是三件不同的事
 （闭合引号 → 联合查询 → 盲注），合成一道就教不了，前后顺序也是按这个来的。
 
+带「过滤绕过」的那 5 道是一组：洞本身跟同分类的另一道题一样，多出来的是一层
+过滤器，考点变成「过滤器描述的是攻击长什么样，而不是什么结构是危险的」。
+过滤层都写在模块内部（一份正式的正则规则表），不依赖任何外部组件。
+
 ## 题目一览
 
 | 难度 | 题目 | 业务场景 | 洞在哪 |
@@ -264,19 +273,24 @@ vuln4all/
 | 入门 | `sqli/login_bypass` | 员工登录页 | 字符串拼接 SQL，`admin' --` |
 | 进阶 | `sqli/union_query` | 商品搜索 | 能 UNION，但页面不给报错，得自己数列数找显示位 |
 | 困难 | `sqli/time_blind` | 工号查询 | 页面永远一样，只剩响应时间这一个信号 |
+| 困难 | `sqli/keyword_filter` | 员工名录 | 黑名单按字面量写；`UNION  SELECT` 双空格就过了 |
 | 入门 | `xss/reflect_search` | 站内搜索 | `\|safe` 关掉了 Jinja 自动转义 |
 | 入门 | `xss/stored_guestbook` | 产品留言板 | payload 落库，之后每次打开页面都触发 |
 | 进阶 | `xss/dom_based` | 欢迎页 | 前端 JS 拿 `location` 拼 `innerHTML`，服务端完全不知情 |
+| 困难 | `xss/tag_filter` | 团队签名墙 | 删除式过滤器可逆；`<scr<script>ipt>` 删完自己拼回标签 |
 | 入门 | `idor/order_detail` | 订单中心 | 只按订单号查，不查归属（水平越权） |
 | 进阶 | `idor/admin_endpoint` | 内部工具站 | 管理员入口只做了 `display:none`，接口不查角色（垂直越权） |
 | 入门 | `path_traversal/file_download` | 企业网盘 | `os.path.join` 被 `../` 和绝对路径顶穿 |
+| 困难 | `path_traversal/encoding_filter` | 企业网盘 | 过滤器和解码层没对齐；双重编码 + 只编码敏感词里一个字符 |
 | 入门 | `ssti/jinja2_profile` | 团队协作 SaaS | 用户输入被当 Jinja2 模板渲染 |
 | 进阶 | `csrf/password_change` | 个人中心 + 攻击者站 | 改密码接口不看请求来源 |
 | 进阶 | `csrf/json_api` | 个人中心 + 攻击者站 | 接口不看 Content-Type 就解析 JSON，`text/plain` 表单能伪造 |
 | 进阶 | `upload/avatar` | 头像上传 | 后缀黑名单大小写敏感 + 信客户端 Content-Type |
 | 困难 | `upload/zip_slip` | 批量上传头像包 | 手写解压循环把 zip 成员名当路径用 |
 | 进阶 | `command_injection/ping_tool` | 运维诊断面板 | 用户输入拼进 shell 命令 |
+| 困难 | `command_injection/space_filter` | 运维诊断面板 | 分隔符黑名单漏了换行；空格用 `${IFS}` 替掉 |
 | 进阶 | `ssrf/url_preview` | 聊天链接预览 | 白名单只做子串匹配，`@` 骗过校验 |
+| 困难 | `ssrf/ip_format_filter` | 聊天链接预览 | 黑名单列 IP 字面量；换一种写法（十进制/十六进制/八进制）就过了 |
 | 进阶 | `flask_session/forged_cookie` | 订阅制 SaaS 后台 | 弱密钥硬编码，session 可以自己签 |
 | 困难 | `race_condition/coupon_redeem` | 限时优惠券 | check-then-act 不原子，并发领取 |
 | 困难 | `jwt/alg_none` | 开放 API 平台 | 验签算法从 token 自己声明的 `alg` 里读 |
