@@ -203,6 +203,9 @@ class Registry:
         entry.ctx = Ctx(entry.id, entry.info, self.home)
 
         try:
+            # 清一下：万一以后有人对同一个 Ctx 再调一次 create_app()，
+            # 残留的键会让「忘了传 mount=」的检查失效
+            entry.ctx.mounts_used.clear()
             apps = entry.instance.create_app(entry.ctx)
         except BaseException as exc:  # noqa: BLE001
             entry.error = "create_app() 出错：%s: %s" % (type(exc).__name__, exc)
@@ -298,9 +301,8 @@ class Registry:
                     )
 
             entry.mounts = kept
-            if not entry.error and not entry.apps:
-                # apps 可能还有残留（键不在 mounts 里的），以 mounts 为准
-                entry.error = "所有挂载点都没挂上，这道题不可用"
+            if not entry.error and not kept:
+                entry.error = "所有挂载点都被摘掉了，这道题不可用"
 
     # --------------------------------------------------------------- 状态
 
@@ -317,21 +319,26 @@ class Registry:
             return
         ctx = entry.ctx
         ctx.workspace.mkdir(parents=True, exist_ok=True)
-        marker = ctx.workspace / MARKER
-        if marker.exists():
-            return
-        try:
-            entry.instance.setup(ctx)
-            marker.write_text("vuln4all\n", encoding="utf-8")
-        except BaseException as exc:  # noqa: BLE001
-            self._note(entry, "setup() 出错：%s: %s" % (type(exc).__name__, exc))
+        with self._reset_lock:
+            marker = ctx.workspace / MARKER
+            if marker.exists():
+                return
+            try:
+                entry.instance.setup(ctx)
+                marker.write_text("vuln4all\n", encoding="utf-8")
+            except BaseException as exc:  # noqa: BLE001
+                self._note(entry, "setup() 出错：%s: %s" % (type(exc).__name__, exc))
 
     def reset(self, entry: ModuleEntry) -> None:
-        """把一道题恢复出厂：清空它的 workspace，重跑 setup()。
+        """把一道题恢复出厂：摘标记 → 清空 workspace → 重跑 setup()。
 
-        全程持锁。reset 是「删目录 → 重建」这套非原子操作，被另一个 reset
-        或者正在跑的请求线程插进来，就会留下「marker 在、数据没了」的半死状态，
-        而且单进程 threaded=True，请求线程可能正握着这个库的 sqlite 连接。
+        持 `_reset_lock`。这保证了 reset 和 reset 之间、reset 和首次 setup 之间
+        不会交叉出「标记在、数据没了」的半死目录。
+
+        说清楚它**不**保证什么：它没有和请求线程互斥。如果 reset 正在删某个
+        模块的 sqlite 文件，而另一条线程正好握着那个库的连接在查，那条请求
+        会拿到一个数据库错误。单进程教学靶场里这可以接受（刷新一下就好），
+        真要挡住得在模块的数据访问上加锁。
         """
         if entry.ctx is None or entry.instance is None:
             raise RuntimeError("模块没有加载成功，无法 reset")

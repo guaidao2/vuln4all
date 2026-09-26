@@ -55,6 +55,12 @@ class Ctx:
     """
 
     def __init__(self, module_id: str, info: dict, home: "Path", logger=None):
+        parts = str(module_id).split("/")
+        if not module_id or any(p in ("", ".", "..") for p in parts):
+            # 模块 id 是从 modules/ 下的目录路径算出来的，正常不可能长这样。
+            # 但 workspace 是直接拼路径的，这里挡一下，免得以后有人换个来源
+            # 传进来就穿出 workspace 以外。
+            raise ValueError("模块 id 不合法：%r" % (module_id,))
         self.id = module_id
         self.info = info
         self.home = Path(home)

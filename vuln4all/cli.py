@@ -124,13 +124,20 @@ def cmd_reset(args) -> int:
             return 2
         targets = [entry]
 
+    failed = 0
     for entry in targets:
         try:
             registry.reset(entry)
         except Exception as exc:  # noqa: BLE001
+            # 一道题炸了不该让剩下的题都重置不了
             print("  !! %s 重置失败：%s: %s" % (entry.id, type(exc).__name__, exc))
-            return 1
+            failed += 1
+            continue
         print("  已重置 %s" % entry.id)
+
+    if failed:
+        print("\n有 %d 道题没重置成功。" % failed, file=sys.stderr)
+        return 1
     return 0
 
 

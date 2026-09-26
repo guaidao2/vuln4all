@@ -22,11 +22,12 @@ WARN = "warn"
 INFO = "info"
 
 #: 疑似硬编码绝对路径的写法。跨挂载点链接必须走 ctx.url()，否则挂载点一改就烂。
+#: 放行 /__vuln4all/... —— 那是 core 自己的固定路径，模块指向它是对的。
 _HARDCODED_URL_PATTERNS = [
-    (re.compile(r"""href\s*=\s*["']/"""), 'href="/…"'),
-    (re.compile(r"""action\s*=\s*["']/"""), 'action="/…"'),
-    (re.compile(r"""src\s*=\s*["']/"""), 'src="/…"'),
-    (re.compile(r"""redirect\(\s*["']/"""), 'redirect("/…")'),
+    (re.compile(r"""href\s*=\s*["']/(?!__vuln4all)"""), 'href="/…"'),
+    (re.compile(r"""action\s*=\s*["']/(?!__vuln4all)"""), 'action="/…"'),
+    (re.compile(r"""src\s*=\s*["']/(?!__vuln4all)"""), 'src="/…"'),
+    (re.compile(r"""redirect\(\s*["']/(?!__vuln4all)"""), 'redirect("/…")'),
     (re.compile(r"""["']/v/"""), '"/v/…"'),
 ]
 
@@ -60,12 +61,16 @@ def check(registry: Registry, smoke: bool = True) -> List[Finding]:
         )
 
     for entry in registry.entries:
+        # 先报 problems：挂载点被摘掉时，entry.error 只说"主挂载点被摘了"，
+        # 而 problems 里才写得清是被谁抢了 / 撞了哪个保留前缀。
+        # 以前这里先 continue，把最有用的那条诊断信息吞掉了。
+        for problem in entry.problems:
+            findings.append(Finding(ERROR, entry.id, problem))
+
         if entry.error:
             findings.append(Finding(ERROR, entry.id, entry.error))
             continue
 
-        for problem in entry.problems:
-            findings.append(Finding(ERROR, entry.id, problem))
         # 拷一份再遍历：reset 会在别的线程往这个列表里追加
         for warning in list(entry.warnings):
             findings.append(Finding(WARN, entry.id, warning))

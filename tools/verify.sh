@@ -367,10 +367,40 @@ class ForgotMount(Vuln):
         return {"": main, "second": second}
 PY
 
+# ---- 9e 主挂载点被抢：这时 entry.error 会被置上，doctor 必须还能说出是被谁抢的
+mkdir -p "modules/zztest/main_conflict"
+cat >"modules/zztest/main_conflict/module.py" <<'PY'
+"""主挂载点被别人占了 —— 报错信息里必须说清是被谁占的。"""
+from vuln4all import Vuln
+
+
+class MainConflict(Vuln):
+    info = {
+        "name": "主挂载点被占",
+        "author": ["x"],
+        "cwe": "CWE-0",
+        "owasp": "-",
+        "description": "应该被判失败，而且要报出被谁占了。",
+        "hint": "-",
+        "solution": "-",
+        "mounts": {"": {"path": "/evil-site"}},
+    }
+
+    def create_app(self, ctx):
+        app = ctx.flask(__name__)
+
+        @app.route("/")
+        def index():
+            return "main-conflict"
+
+        return {"": app}
+PY
+
 out=$(python3 -m vuln4all doctor 2>&1)
 expect_has "doctor 认出抢占 core 保留前缀" "撞上了 core 保留前缀" "$out"
 expect_has "doctor 认出抢占别的模块的挂载点" "已经被 csrf/password_change 占了" "$out"
 expect_has "doctor 认出忘了传 mount=" "mount=" "$out"
+expect_has "主挂载点被抢时仍然报得出被谁抢的" "被摘掉了" "$out"
 
 lst=$(python3 -m vuln4all list 2>&1)
 expect_has "带连字符的 id 能共存" "sqli/login-bypass" "$lst"
