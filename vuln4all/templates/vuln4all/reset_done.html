@@ -1,0 +1,8 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}已重置{% endblock %}
+
+{% block content %}
+<h1>已经恢复出厂了</h1>
+<p>重置了：<span class="mono">{{ module_id }}</span></p>
+<p><a href="{{ target }}">回到刚才那页</a> · <a href="/">回清单</a></p>
+{% endblock %}

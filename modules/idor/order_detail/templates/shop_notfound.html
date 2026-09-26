@@ -1,0 +1,12 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}找不到订单{% endblock %}
+
+{% block content %}
+<h1>没有这个订单</h1>
+<p>订单 <span class="mono">{{ order_id }}</span> 不存在。</p>
+<p class="muted">
+  这个页面本身也在泄露信息：它能区分「订单不存在」和「订单存在但不是你的」吗？
+  如果可以，攻击者就能靠这个差别把别人的数据摸个遍。这叫<strong>枚举</strong>。
+</p>
+<p><a href="{{ url_for('orders') }}">回到我的订单</a></p>
+{% endblock %}

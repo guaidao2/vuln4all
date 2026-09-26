@@ -1,0 +1,33 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}个人中心 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>员工个人中心</h1>
+<p>当前登录：<strong>{{ user }}</strong></p>
+
+{% if notice %}
+  <pre class="payload">{{ notice }}</pre>
+{% endif %}
+
+<h2>修改密码</h2>
+<form method="post" action="{{ url_for('change_password') }}">
+  <p><label>新密码<br><input type="text" name="new_password" value=""></label></p>
+  <p><button type="submit" class="btn">改密码</button></p>
+</form>
+
+<p class="muted">
+  这个表单里只有「新密码」一个字段 —— 没有隐藏的 CSRF token。
+  换句话说，服务端没法区分「你点的」和「别人替你发的」。
+</p>
+
+<h2>攻击者站点</h2>
+<p>
+  假设你在另一个标签页里，被钓鱼打开了攻击者准备的页面：
+  <a href="{{ evil_url }}">{{ evil_url }}</a>
+</p>
+<p class="muted">
+  先保持现在这个登录状态，再去那个页面转一圈，然后回来看看你的密码还好不好使。
+</p>
+
+<p><a href="{{ url_for('logout') }}">退出</a></p>
+{% endblock %}

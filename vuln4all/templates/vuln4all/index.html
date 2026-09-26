@@ -1,0 +1,82 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}vuln4all 靶场{% endblock %}
+
+{% block content %}
+<h1>题目清单</h1>
+
+{% if not registry.entries %}
+  <p class="muted">modules/ 下面一道题都没有。</p>
+  <p>起个头：</p>
+  <pre class="payload">vuln4all new sqli/login_bypass</pre>
+{% else %}
+  <p class="muted">共 {{ registry.entries | length }} 道题。点标题进题。</p>
+
+  {% for category, entries in registry.categories() %}
+  <section class="cat">
+    <h2>{{ category }}</h2>
+    <ul class="cards">
+      {% for entry in entries %}
+      <li class="card{% if not entry.ok %} card-bad{% endif %}">
+        {% if entry.ok %}
+          <a class="card-title" href="{{ entry.main_path }}/">{{ entry.display_name }}</a>
+          <div class="card-meta">
+            <span class="mono muted">{{ entry.id }}</span>
+            {% if entry.info.cwe %}<span class="tag">{{ entry.info.cwe }}</span>{% endif %}
+            {% for mount in entry.hidden_mounts %}
+              <span class="tag tag-hidden" title="{{ mount.path }}">隐藏入口</span>
+            {% endfor %}
+          </div>
+          {% if entry.visible_mounts | length > 1 %}
+            <p class="card-mounts">另有入口：
+              {% for mount in entry.visible_mounts %}
+                {% if mount.key %}<a href="{{ mount.path }}/" class="mono">{{ mount.path }}/</a>{% endif %}
+              {% endfor %}
+            </p>
+          {% endif %}
+          {% if entry.info.description %}
+            <p class="card-desc">{{ entry.info.description }}</p>
+          {% endif %}
+        {% else %}
+          <span class="card-title bad">{{ entry.id }} —— 加载失败</span>
+          <p class="err">{{ entry.error }}</p>
+          <p class="muted">跑一下 <code>vuln4all doctor {{ entry.id }}</code> 看细节。</p>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endfor %}
+{% endif %}
+
+{% if registry.conflicts or registry.broken_dirs or registry.skipped_mounts %}
+<section class="cat">
+  <h2>需要注意</h2>
+  <ul class="cards">
+    {% for conflict in registry.conflicts %}
+      <li class="card card-warn">{{ conflict }}</li>
+    {% endfor %}
+    {% for directory, reason in registry.broken_dirs %}
+      <li class="card card-warn">
+        <span class="mono">modules/{{ directory }}</span> {{ reason }}，所以没被加载。
+      </li>
+    {% endfor %}
+    {% for module_id, path, taken_by in registry.skipped_mounts %}
+      <li class="card card-warn">
+        <span class="mono">{{ module_id }}</span> 想挂在
+        <span class="mono">{{ path }}</span>，但已经被
+        <span class="mono">{{ taken_by }}</span> 占了，所以这个入口没生效。
+      </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<section class="cat">
+  <h2>加一道题</h2>
+  <p>在 <code>modules/&lt;分类&gt;/&lt;名字&gt;/module.py</code> 里继承
+  <code>Vuln</code>、实现 <code>create_app()</code>，重启靶场就出现在上面。
+  不用登记，也不用改 core。</p>
+  <pre class="payload">vuln4all new &lt;分类&gt;/&lt;名字&gt;   # 生成骨架
+vuln4all doctor              # 检查写得合不合规</pre>
+</section>
+{% endblock %}

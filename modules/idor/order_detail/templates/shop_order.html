@@ -1,0 +1,47 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}订单 {{ order['id'] }} - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+{% if stolen %}
+  <h1>别人的订单</h1>
+  <p class="ok">
+    订单 <span class="mono">{{ order['id'] }}</span> 属于
+    <span class="mono">{{ order['owner'] }}</span>，不属于你 —— 但你还是看到了。
+    <strong>这题通了。</strong>
+  </p>
+
+  <h2>你拿走的东西</h2>
+  <table class="findings">
+    <tbody>
+      <tr><th>订单号</th><td class="mono">{{ order['id'] }}</td></tr>
+      <tr><th>归属</th><td>{{ order['owner'] }}</td></tr>
+      <tr><th>商品</th><td>{{ order['item'] }}</td></tr>
+      <tr><th>金额</th><td>￥{{ '%.2f' % order['amount'] }}</td></tr>
+      <tr><th>备注</th><td>{{ order['note'] }}</td></tr>
+    </tbody>
+  </table>
+
+  <p class="muted">
+    服务端从头到尾没问过一句「这单是当前登录用户的吗」。它只是拿到 URL 里的数字，
+    就去数据库里查了，查到什么给你什么。
+  </p>
+  <p class="muted">
+    现实里这种洞能翻出来的东西远不止订单：<span class="mono">/user/1002</span>、
+    <span class="mono">/invoice/8871.pdf</span>、<span class="mono">/api/messages?id=99</span>……
+    凡是 URL 里直接摆着的对象编号，都得试试换个数字。
+  </p>
+{% else %}
+  <h1>订单 {{ order['id'] }}</h1>
+  <table class="findings">
+    <tbody>
+      <tr><th>订单号</th><td class="mono">{{ order['id'] }}</td></tr>
+      <tr><th>商品</th><td>{{ order['item'] }}</td></tr>
+      <tr><th>金额</th><td>￥{{ '%.2f' % order['amount'] }}</td></tr>
+      <tr><th>备注</th><td>{{ order['note'] }}</td></tr>
+    </tbody>
+  </table>
+  <p class="muted">这是你自己的订单。把地址栏里的 {{ order['id'] }} 改成别的数字看看。</p>
+{% endif %}
+
+<p><a href="{{ url_for('orders') }}">回到我的订单</a></p>
+{% endblock %}

@@ -1,0 +1,24 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}搜索 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>站内搜索</h1>
+
+<form method="get" action="{{ url_for('index') }}">
+  <p><input type="text" name="q" value="{{ keyword }}" placeholder="搜点什么"></p>
+  <p><button type="submit" class="btn">搜索</button></p>
+</form>
+
+{% if keyword %}
+  <h2>搜索结果</h2>
+  {#- ↓↓↓ 洞就在这里：|safe 关掉了 Jinja 的自动转义 ↓↓↓
+      正常写法是 {{ keyword }}，Jinja 会自动把 < > & 转成实体字符，
+      浏览器就只会把它当文字显示。这里主动放弃了这层保护。 -#}
+  <p>你搜索的内容：{{ keyword | safe }}</p>
+  {#- ↑↑↑ 正确写法：{{ keyword }} ↑↑↑ -#}
+
+  <p class="muted">（没有找到相关内容）</p>
+{% else %}
+  <p class="muted">随便搜点什么。先试试 <span class="mono">&lt;b&gt;hello&lt;/b&gt;</span>。</p>
+{% endif %}
+{% endblock %}

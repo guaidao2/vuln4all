@@ -1,0 +1,22 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}登录 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>员工登录</h1>
+
+<form method="post" action="{{ url_for('index') }}">
+  <p><label>用户名<br><input type="text" name="username" value=""></label></p>
+  <p><label>密码<br><input type="password" name="password" value=""></label></p>
+  <p><button type="submit" class="btn">登录</button></p>
+</form>
+
+{% if error %}
+  <h2>出错了</h2>
+  <pre class="payload">{{ error }}</pre>
+{% endif %}
+
+{% if sql %}
+  <p class="muted">这次真正执行的语句：</p>
+  <pre class="payload">{{ sql }}</pre>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,16 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}登录 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>员工个人中心 · 登录</h1>
+
+{% if error %}<p class="err">{{ error }}</p>{% endif %}
+
+<form method="post" action="{{ url_for('login') }}">
+  <p><label>用户名<br><input type="text" name="username" value="bob"></label></p>
+  <p><label>密码<br><input type="text" name="password" value="password123"></label></p>
+  <p><button type="submit" class="btn">登录</button></p>
+</form>
+
+<p class="muted">演示账号：bob / password123</p>
+{% endblock %}

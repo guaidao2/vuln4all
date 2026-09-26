@@ -1,0 +1,87 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}上传头像 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>上传头像</h1>
+
+<form method="post" action="{{ url_for('upload') }}" enctype="multipart/form-data">
+  <p><input type="file" name="avatar"></p>
+  <p><button type="submit" class="btn">上传</button></p>
+</form>
+
+<p class="muted">只允许上传图片。禁止的后缀：
+  <span class="mono">{{ blocked_list | join(' ') }}</span>
+</p>
+
+{% if error %}
+  <h2>被拦下了</h2>
+  <pre class="payload">{{ error }}</pre>
+  {% if rejected_name %}
+    <table class="findings">
+      <tbody>
+        <tr><th>你提交的文件名</th><td class="mono">{{ rejected_name }}</td></tr>
+        <tr><th>你提交的 Content-Type</th><td class="mono">{{ rejected_type }}</td></tr>
+      </tbody>
+    </table>
+    <p class="muted">
+      服务端把哪个值当真了？注意 Content-Type 这个头是<strong>你的客户端自己写的</strong>。
+      浏览器里改不了它 —— 换个能改的工具。
+    </p>
+  {% endif %}
+{% endif %}
+
+{% if bypassed %}
+  <h2>绕过去了</h2>
+  <p class="ok">
+    一个 <span class="mono">{{ bypassed[1] }}</span> 文件成功落进了上传目录 ——
+    <strong>这题通了。</strong>
+  </p>
+  <table class="findings">
+    <tbody>
+      <tr><th>落地的文件名</th><td class="mono">{{ bypassed[0] }}</td></tr>
+      <tr><th>你声明的 Content-Type</th><td class="mono">{{ bypassed[2] }}</td></tr>
+    </tbody>
+  </table>
+  <p class="muted">
+    这个文件现在能被直接访问到：
+    <a class="mono" href="{{ url_for('serve_upload', filename=bypassed[0]) }}">{{ url_for('serve_upload', filename=bypassed[0]) }}</a>
+  </p>
+  <p class="err">
+    本靶场是单进程 Python，没有 PHP 解释器，所以你上传的 php 文件不会被执行 ——
+    这一步到此为止。但在真实的 PHP 站点上，这个文件躺在可访问的目录里，
+    接下来就是 getshell。链条只差最后一环。
+  </p>
+{% endif %}
+
+{% if deleted %}
+  <p class="muted">已删除 {{ deleted }}</p>
+{% endif %}
+
+<h2>已上传的文件</h2>
+{% if files %}
+  <table class="findings">
+    <thead><tr><th>文件名</th><th>查看</th><th></th></tr></thead>
+    <tbody>
+      {% for name in files %}
+      <tr>
+        <td class="mono">{{ name }}</td>
+        <td><a class="mono" href="{{ url_for('serve_upload', filename=name) }}">打开</a></td>
+        <td>
+          <form method="post" action="{{ url_for('delete') }}" style="display:inline">
+            <input type="hidden" name="name" value="{{ name }}">
+            <button type="submit" class="btn">删</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <p class="muted">还没有人传过东西。</p>
+{% endif %}
+
+<p class="muted">
+  上传目录在靶场的 <span class="mono">workspace/</span> 里，是被当静态文件直接服务的。
+  这本身也是常见错法：<strong>上传目录不该可访问，更不该可执行。</strong>
+</p>
+{% endblock %}

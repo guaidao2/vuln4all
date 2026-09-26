@@ -1,0 +1,144 @@
+:root {
+  --bg: #12151c;
+  --panel: #1b1f29;
+  --panel-2: #222734;
+  --line: #2e3546;
+  --fg: #dfe4ee;
+  --muted: #8b95a9;
+  --accent: #6aa9ff;
+  --bad: #ff6b6b;
+  --warn: #ffb454;
+  --ok: #57d9a3;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.65 -apple-system, "Segoe UI", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, pre, .mono {
+  font-family: ui-monospace, "Cascadia Code", Consolas, "JetBrains Mono", monospace;
+  font-size: 13px;
+}
+code { background: var(--panel-2); padding: 1px 5px; border-radius: 4px; }
+
+.topbar {
+  display: flex; align-items: center; gap: 14px;
+  padding: 12px 22px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.brand { font-weight: 700; font-size: 17px; letter-spacing: .5px; }
+.crumb { color: var(--muted); }
+.topnav { margin-left: auto; display: flex; gap: 16px; }
+
+.vulnbar {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 10px 22px;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--line);
+}
+.vulnbar-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.vulnbar-actions { margin-left: auto; }
+
+.tag {
+  display: inline-block;
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.tag-bad { color: var(--bad); border-color: var(--bad); }
+.tag-warn { color: var(--warn); border-color: var(--warn); }
+.tag-hidden { color: var(--warn); border-color: var(--warn); }
+
+.btn {
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+input[type=text], input[type=password], textarea {
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font: inherit;
+  min-width: 200px;
+}
+
+.teach {
+  margin: 12px 22px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 14px;
+}
+.teach summary { cursor: pointer; color: var(--muted); }
+.teach-body { padding: 4px 0 8px; }
+.payload {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.refs { margin: 4px 0 0; padding-left: 20px; }
+
+main { padding: 22px; max-width: 1000px; }
+h1 { font-size: 22px; margin: 0 0 14px; }
+h2 { font-size: 16px; margin: 26px 0 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+
+.muted { color: var(--muted); }
+.err { color: var(--bad); }
+.bad { color: var(--bad); }
+.ok { color: var(--ok); }
+
+.cards { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+.card-bad { border-color: var(--bad); }
+.card-warn { border-color: var(--warn); }
+.card-title { font-weight: 600; font-size: 16px; }
+.card-meta { display: flex; gap: 8px; align-items: center; margin: 4px 0; flex-wrap: wrap; }
+.card-desc { margin: 6px 0 0; color: var(--muted); }
+.card-mounts { margin: 6px 0 0; font-size: 14px; color: var(--muted); }
+.card-mounts a { margin-right: 8px; }
+
+.findings { width: 100%; border-collapse: collapse; font-size: 14px; }
+.findings th, .findings td {
+  text-align: left; padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.findings th { color: var(--muted); font-weight: 500; }
+.lvl-error td:first-child { color: var(--bad); }
+.lvl-warn td:first-child { color: var(--warn); }
+.lvl-info td:first-child { color: var(--muted); }
+
+.foot {
+  margin-top: 40px;
+  padding: 14px 22px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+}

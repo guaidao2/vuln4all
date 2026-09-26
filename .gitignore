@@ -1,0 +1,17 @@
+# 运行时生成：每道题的私有数据，随时可以删
+/workspace/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+.DS_Store

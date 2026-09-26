@@ -1,0 +1,18 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}控制台 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+{% if is_admin %}
+  <h1>管理员控制台</h1>
+  <p class="ok">你以 <strong>admin</strong> 的身份进来了 —— 这题通了。</p>
+  <p>本来这里是需要密码的。你的输入让那条查询把密码检查整个跳过了。</p>
+  <pre class="payload">机密档案：只有管理员能看的内容</pre>
+{% else %}
+  <h1>欢迎，{{ user }}</h1>
+  <p>你登录成功了，但身份是 <span class="mono">{{ role }}</span>，不是管理员。</p>
+  <p class="muted">这题的目标是拿到 <span class="mono">admin</span> 身份。
+    提示：随便试个什么用户名，先看看报错里那条 SQL 长什么样。</p>
+{% endif %}
+
+<p><a href="{{ url_for('logout') }}">退出</a></p>
+{% endblock %}

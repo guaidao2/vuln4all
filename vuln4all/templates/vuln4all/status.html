@@ -1,0 +1,54 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}体检{% endblock %}
+
+{% block content %}
+<h1>体检</h1>
+<p class="muted">根目录：<span class="mono">{{ home }}</span></p>
+<p>
+  <span class="tag tag-bad">错误 {{ summary.get('error', 0) }}</span>
+  <span class="tag tag-warn">警告 {{ summary.get('warn', 0) }}</span>
+  <span class="tag">提示 {{ summary.get('info', 0) }}</span>
+</p>
+{% if not has_errors %}
+  <p class="ok">没有致命问题。</p>
+{% endif %}
+<p class="muted">这个页面只做静态检查。要连冒烟请求一起跑：
+  <code>vuln4all doctor</code></p>
+
+{% if findings %}
+<table class="findings">
+  <thead>
+    <tr><th>级别</th><th>模块</th><th>说明</th></tr>
+  </thead>
+  <tbody>
+    {% for finding in findings %}
+    <tr class="lvl-{{ finding.level }}">
+      <td>{{ {'error': '错误', 'warn': '警告', 'info': '提示'}.get(finding.level, finding.level) }}</td>
+      <td class="mono">{{ finding.scope }}</td>
+      <td>{{ finding.message }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+  <p class="muted">没有任何发现。</p>
+{% endif %}
+
+<h2>挂载点</h2>
+<table class="findings">
+  <thead><tr><th>路径</th><th>模块</th><th>说明</th></tr></thead>
+  <tbody>
+    {% for entry in registry.entries %}
+      {% if entry.ok %}
+        {% for mount in entry.mounts %}
+        <tr>
+          <td class="mono">{{ mount.path }}/</td>
+          <td class="mono">{{ entry.id }}</td>
+          <td>{{ '隐藏入口' if mount.hidden else ('主入口' if not mount.key else '公开入口') }}</td>
+        </tr>
+        {% endfor %}
+      {% endif %}
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
