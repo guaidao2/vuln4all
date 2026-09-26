@@ -271,7 +271,7 @@ class Registry:
             self.entries.append(entry)
             self._build(entry, setup=setup)
 
-        # 有些目录放了东西但没有 module.py，多半是新手忘了，报出来
+        # 有些目录放了东西但没有 module.py，多半是漏了入口文件，报出来
         for candidate in sorted(modules_root.rglob("*")):
             if not candidate.is_dir() or candidate == modules_root:
                 continue

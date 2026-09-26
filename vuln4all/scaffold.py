@@ -18,12 +18,13 @@ from vuln4all import Vuln, render_template, request
 class {cls}(Vuln):
     info = {{
         "name": "{name}",
-        "author": ["guaidao2"],
+        # 写你自己的名字（或者你的 ID / 主页）。这是别人知道"这题谁出的"的唯一途径。
+        "author": ["TODO 你的名字"],
         "cwe": "TODO，例如 CWE-89",
         "owasp": "TODO，例如 A03:2021 - Injection",
         "difficulty": "TODO，入门 / 进阶 / 困难 三选一",
         "description": "TODO 一句话说清漏洞在哪。",
-        "hint": "TODO 给新手的提示：先试什么、观察什么。别直接写答案。",
+        "hint": "TODO 给做题的人的提示：先试什么、观察什么。别直接写答案。",
         "solution": "TODO 具体怎么打通，最好给一条能直接复制的 payload。",
         "refs": [],
         # 想多挂几个入口（比如 SSRF 的“内网服务”、CSRF 的“攻击者站点”）就这样写：

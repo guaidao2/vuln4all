@@ -21,6 +21,8 @@ ERROR = "error"
 WARN = "warn"
 INFO = "info"
 
+_PLACEHOLDER = re.compile(r"\bTODO\b", re.I)
+
 #: 疑似硬编码绝对路径的写法。跨挂载点链接必须走 ctx.url()，否则挂载点一改就烂。
 #: 放行 /__vuln4all/... —— 那是 core 自己的固定路径，模块指向它是对的。
 _HARDCODED_URL_PATTERNS = [
@@ -87,6 +89,8 @@ def check(registry: Registry, smoke: bool = True) -> List[Finding]:
                 findings.append(
                     Finding(INFO, entry.id, "建议补上 info[%r]，会影响清单页和教学体验" % key)
                 )
+
+        findings.extend(_check_placeholders(entry))
 
         # 难度只是个标签，填错了不影响运行 —— 所以只提醒，不当错误
         difficulty = str(entry.info.get("difficulty", "")).strip()
@@ -192,6 +196,36 @@ def _workspace_fingerprint(entry) -> tuple:
     except OSError:
         progress = b""
     return (names, progress)
+
+
+def _check_placeholders(entry) -> List[Finding]:
+    """抓没改完的骨架。
+
+    `vuln4all new` 生成的 info 里全是 TODO 占位文本。忘了改的话，题目会带着
+    "TODO 一句话说清漏洞在哪" 出现在清单页上 —— 这个检查直接把它指出来。
+
+    比在文档里写一句"记得改"有用：它不依赖任何人记得，也不依赖任何人读文档。
+    """
+    leftovers = []
+    for key, value in entry.info.items():
+        if key == "mounts":
+            continue
+        texts = value if isinstance(value, (list, tuple, set)) else [value]
+        for text in texts:
+            if isinstance(text, str) and _PLACEHOLDER.search(text):
+                # 连原文一起打出来，比只报字段名好定位
+                leftovers.append("%s（%s）" % (key, text.strip()[:40]))
+                break
+    if not leftovers:
+        return []
+    return [
+        Finding(
+            WARN,
+            entry.id,
+            "info 里这些字段还带着 TODO 占位文本（多半是脚手架生成后没改完）：%s。"
+            "这些字会直接显示在清单页和题目页上" % "、".join(sorted(leftovers)),
+        )
+    ]
 
 
 def _check_source(entry) -> List[Finding]:

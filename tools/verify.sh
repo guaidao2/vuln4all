@@ -600,6 +600,41 @@ expect_has "doctor 认出抢占别的模块的挂载点" "已经被 csrf/passwor
 expect_has "doctor 认出忘了传 mount=" "mount=" "$out"
 expect_has "主挂载点被抢时仍然报得出被谁抢的" "被摘掉了" "$out"
 
+# ---- 9f 脚手架生成的骨架没改完时，doctor 应该直接说出来
+# （尤其是作者名 —— 靠"记得改"是拦不住的，只能靠工具）
+python3 -m vuln4all new zztest/fresh_scaffold >/dev/null 2>&1
+
+# 直接看骨架文件，确认作者默认值不是某个具体的人
+expect_has "骨架的作者默认值是待填的占位，不是某个人的名字" "TODO 你的名字" \
+  "$(cat modules/zztest/fresh_scaffold/module.py)"
+
+out=$(python3 -m vuln4all doctor zztest/fresh_scaffold 2>&1)
+expect_has "doctor 认出没改完的骨架" "TODO 占位文本" "$out"
+expect_has "并把占位原文打出来方便定位" "author（TODO 你的名字）" "$out"
+
+# 把 TODO 填掉之后就不该再报
+python3 - <<'PY'
+from pathlib import Path
+path = Path("modules/zztest/fresh_scaffold/module.py")
+text = path.read_text(encoding="utf-8")
+for old, new in (
+    ('["TODO 你的名字"]', '["某个贡献者"]'),
+    ('"TODO，例如 CWE-89"', '"CWE-79"'),
+    ('"TODO，例如 A03:2021 - Injection"', '"A03:2021 - Injection"'),
+    ('"TODO，入门 / 进阶 / 困难 三选一"', '"入门"'),
+    ('"TODO 一句话说清漏洞在哪。"', '"测试用。"'),
+    ('"TODO 给做题的人的提示：先试什么、观察什么。别直接写答案。"', '"先试试看。"'),
+    ('"TODO 具体怎么打通，最好给一条能直接复制的 payload。"', '"随便打。"'),
+):
+    text = text.replace(old, new)
+path.write_text(text, encoding="utf-8")
+PY
+out=$(python3 -m vuln4all doctor zztest/fresh_scaffold 2>&1)
+expect_no "把占位填掉之后就不再报" "TODO 占位文本" "$out"
+
+out=$(python3 -m vuln4all doctor 2>&1)
+expect_no "现有 12 道题不会被这条检查误伤" "TODO 占位文本" "$out"
+
 lst=$(python3 -m vuln4all list 2>&1)
 expect_has "带连字符的 id 能共存" "sqli/login-bypass" "$lst"
 expect_has "带下划线的 id 还在" "sqli/login_bypass" "$lst"
