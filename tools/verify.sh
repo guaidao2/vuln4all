@@ -205,6 +205,19 @@ expect_code "重置全部（303）" "$code" "303"
 body=$(curl -s "$BASE/v/upload/avatar/")
 expect_no "重置全部后上传的文件被清掉了" "shell.PHp" "$body"
 
+# 浏览器发起的跨站重置应该被拒（curl 不带 Origin，所以上面那些不受影响）
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/__vuln4all/reset" \
+  -H "Origin: http://evil.example" --data-urlencode "id=*")
+expect_code "跨站来的重置请求被拒（403）" "$code" "403"
+
+# 开放重定向：反斜杠变体
+loc=$(curl -s -o /dev/null -w '%{redirect_url}' -X POST "$BASE/__vuln4all/reset" \
+  --data-urlencode "id=sqli/login_bypass" --data-urlencode 'next=/\evil.example')
+case "$loc" in
+  *evil.example*) bad "next=/\evil.example 被放行了（开放重定向）：$loc" ;;
+  *)              ok  "反斜杠变体的 next 被吃掉了" ;;
+esac
+
 rm -f /tmp/v4a-shell.php /tmp/v4a-up1.html /tmp/v4a-up2.html /tmp/v4a-up3.html "$JAR"
 
 step "8. 命令行"
@@ -216,6 +229,177 @@ ec=$?
 expect_no "doctor 不再把 templates/ 误报成缺 module.py" "templates 这个目录下" "$out"
 expect_no "doctor 不再提 __pycache__" "__pycache__" "$out"
 if [ "$ec" = "0" ]; then ok "doctor 退出码是 0"; else bad "doctor 退出码是 $ec"; fi
+
+step "9. core 契约加固（在 /tmp 的副本里做，不动真靶场）"
+LAB=/tmp/v4a-hardening
+rm -rf "$LAB"
+mkdir -p "$LAB"
+cp -r "$ROOT/vuln4all" "$ROOT/modules" "$LAB/"
+
+cd "$LAB" || exit 1
+
+# ---- 9a 归一化撞名：id 里的 - 和 _ 必须能共存（sqli/login_bypass 已存在）
+mkdir -p "modules/sqli/login-bypass"
+cat >"modules/sqli/login-bypass/module.py" <<'PY'
+"""对照组：这个 id 用连字符，必须和 modules/sqli/login_bypass 各自独立。"""
+from vuln4all import Vuln
+
+
+class DashVariant(Vuln):
+    info = {
+        "name": "连字符对照组",
+        "author": ["x"],
+        "cwe": "CWE-0",
+        "owasp": "-",
+        "description": "用来验证归一化撞名已经修掉。",
+        "hint": "-",
+        "solution": "-",
+    }
+
+    def create_app(self, ctx):
+        app = ctx.flask(__name__)
+
+        @app.route("/")
+        def index():
+            return "dash-variant"
+
+        return {"": app}
+PY
+
+# ---- 9b 抢占 core 的保留前缀
+mkdir -p "modules/zztest/reserved_path"
+cat >"modules/zztest/reserved_path/module.py" <<'PY'
+"""这个模块想把 core 的体检页抢过来，应该被摘掉。"""
+from vuln4all import Vuln
+
+
+class StealStatus(Vuln):
+    info = {
+        "name": "抢体检页",
+        "author": ["x"],
+        "cwe": "CWE-0",
+        "owasp": "-",
+        "description": "应该被拒绝。",
+        "hint": "-",
+        "solution": "-",
+        "mounts": {"evil": {"path": "/__vuln4all/status"}},
+    }
+
+    def create_app(self, ctx):
+        main = ctx.flask(__name__)
+        evil = ctx.flask(__name__, mount="evil")
+
+        @main.route("/")
+        def index():
+            return "main"
+
+        @evil.route("/")
+        def hijack():
+            return "HijackedStatus"
+
+        return {"": main, "evil": evil}
+PY
+
+# ---- 9c 抢占已经被别的模块占了的挂载点
+mkdir -p "modules/zztest/steal_evil"
+cat >"modules/zztest/steal_evil/module.py" <<'PY'
+"""这个模块想挂到 /evil-site，但那个位置是 csrf/password_change 的。"""
+from vuln4all import Vuln
+
+
+class StealEvil(Vuln):
+    info = {
+        "name": "抢别人的挂载点",
+        "author": ["x"],
+        "cwe": "CWE-0",
+        "owasp": "-",
+        "description": "应该被拒绝。",
+        "hint": "-",
+        "solution": "-",
+        "mounts": {"steal": {"path": "/evil-site"}},
+    }
+
+    def create_app(self, ctx):
+        main = ctx.flask(__name__)
+        steal = ctx.flask(__name__, mount="steal")
+
+        @main.route("/")
+        def index():
+            return "main"
+
+        @steal.route("/")
+        def taken():
+            return "StolenEvilSite"
+
+        return {"": main, "steal": steal}
+PY
+
+# ---- 9d 多挂载点忘了传 mount=：两個 app 会用同一个 session cookie
+mkdir -p "modules/zztest/forgot_mount"
+cat >"modules/zztest/forgot_mount/module.py" <<'PY'
+"""第二个 app 故意不传 mount=，doctor 应该抓出来。"""
+from vuln4all import Vuln
+
+
+class ForgotMount(Vuln):
+    info = {
+        "name": "忘了传 mount",
+        "author": ["x"],
+        "cwe": "CWE-0",
+        "owasp": "-",
+        "description": "应该被检查出来。",
+        "hint": "-",
+        "solution": "-",
+    }
+
+    def create_app(self, ctx):
+        main = ctx.flask(__name__)
+        second = ctx.flask(__name__)  # <- 忘了 mount="second"
+
+        @main.route("/")
+        def index():
+            return "main"
+
+        @second.route("/")
+        def other():
+            return "second"
+
+        return {"": main, "second": second}
+PY
+
+out=$(python3 -m vuln4all doctor 2>&1)
+expect_has "doctor 认出抢占 core 保留前缀" "撞上了 core 保留前缀" "$out"
+expect_has "doctor 认出抢占别的模块的挂载点" "已经被 csrf/password_change 占了" "$out"
+expect_has "doctor 认出忘了传 mount=" "mount=" "$out"
+
+lst=$(python3 -m vuln4all list 2>&1)
+expect_has "带连字符的 id 能共存" "sqli/login-bypass" "$lst"
+expect_has "带下划线的 id 还在" "sqli/login_bypass" "$lst"
+
+# 真起一次：归一化撞名会让后加载的顶掉先加载的，core 的体检页也会被抢走
+nohup python3 -m vuln4all run --port 8803 >/tmp/v4a-lab.log 2>&1 &
+LABPID=$!
+for _ in $(seq 1 40); do
+  curl -s -o /dev/null http://127.0.0.1:8803/ && break
+  sleep 0.25
+done
+body=$(curl -s http://127.0.0.1:8803/__vuln4all/status)
+expect_has "core 的体检页没被抢走" "体检" "$body"
+expect_no "抢挂载点的模块没盖住 core" "HijackedStatus" "$body"
+
+body=$(curl -s http://127.0.0.1:8803/v/sqli/login-bypass/)
+expect_has "连字符那个模块自己跑起来了" "dash-variant" "$body"
+body=$(curl -s http://127.0.0.1:8803/v/sqli/login_bypass/)
+expect_has "下划线那个模块没被顶掉" "员工登录" "$body"
+
+if [ -r "/proc/$LABPID/cmdline" ] && tr '\0' ' ' <"/proc/$LABPID/cmdline" | grep -q "vuln4all"; then
+  kill "$LABPID" 2>/dev/null
+  sleep 1
+  kill -9 "$LABPID" 2>/dev/null
+fi
+
+cd "$ROOT" || exit 1
+rm -rf "$LAB"
 
 step "结果"
 printf '  通过 %d 项，失败 %d 项\n' "$PASS" "$FAIL"

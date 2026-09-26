@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import importlib.metadata
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -65,7 +66,8 @@ def check(registry: Registry, smoke: bool = True) -> List[Finding]:
 
         for problem in entry.problems:
             findings.append(Finding(ERROR, entry.id, problem))
-        for warning in entry.warnings:
+        # 拷一份再遍历：reset 会在别的线程往这个列表里追加
+        for warning in list(entry.warnings):
             findings.append(Finding(WARN, entry.id, warning))
 
         if not entry.mounts:
@@ -82,7 +84,7 @@ def check(registry: Registry, smoke: bool = True) -> List[Finding]:
                 )
 
         findings.extend(_check_source(entry))
-        findings.extend(_check_workspace(entry))
+        findings.extend(_check_workspace(entry, probe=smoke))
         findings.extend(_check_requirements(entry))
 
         if smoke:
@@ -92,37 +94,62 @@ def check(registry: Registry, smoke: bool = True) -> List[Finding]:
 
 
 def _check_source(entry) -> List[Finding]:
-    source = Path(entry.directory) / ENTRY_FILE
-    if not source.is_file():
+    """扫模块自己的 py 和模板，找硬编码的绝对路径。
+
+    模板必须一起扫 —— `href="/..."` 这类写法基本都写在 HTML 里，
+    只查 module.py 等于只查了一半。
+    """
+    directory = Path(entry.directory)
+    targets = []
+    entry_file = directory / ENTRY_FILE
+    if entry_file.is_file():
+        targets.append(entry_file)
+    targets.extend(sorted(p for p in directory.rglob("*.html") if p.is_file()))
+
+    hits = set()
+    for path in targets:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for pattern, label in _HARDCODED_URL_PATTERNS:
+            if pattern.search(text):
+                hits.add("%s（%s）" % (label, path.name))
+    if not hits:
         return []
-    text = source.read_text(encoding="utf-8", errors="replace")
-    if len([m for m in entry.mounts if m.key != ""]) == 0:
-        # 只有一个挂载点，硬编码路径的危害小一些，但仍然提醒
-        pass
-    hits = sorted({label for pattern, label in _HARDCODED_URL_PATTERNS if pattern.search(text)})
-    if hits:
-        return [
-            Finding(
-                WARN,
-                entry.id,
-                "疑似硬编码了绝对路径（%s）。跨挂载点的链接请用 ctx.url()，"
-                "自己应用内部的路由请用 url_for()，否则改挂载点时会静默烂掉" % "、".join(hits),
-            )
-        ]
-    return []
+    return [
+        Finding(
+            WARN,
+            entry.id,
+            "疑似硬编码了绝对路径：%s。跨挂载点的链接请用 ctx.url()，"
+            "自己应用内部的路由请用 url_for()，否则改挂载点时会静默烂掉"
+            % "、".join(sorted(hits)),
+        )
+    ]
 
 
-def _check_workspace(entry) -> List[Finding]:
+def _check_workspace(entry, probe: bool) -> List[Finding]:
+    """检查 workspace 能不能写。
+
+    probe=True 时真的写一个文件试（只有 CLI 的 doctor 会这么干）。
+    体检页面走 probe=False —— 一个 GET 请求不该在磁盘上留下副作用，
+    而且在只读检出上会让每道题都误报「不可写」。
+    """
     if entry.ctx is None:
         return []
     workspace = entry.ctx.workspace
     try:
         workspace.mkdir(parents=True, exist_ok=True)
-        probe = workspace / ".doctor-write-test"
-        probe.write_text("x", encoding="utf-8")
-        probe.unlink()
     except OSError as exc:
-        return [Finding(ERROR, entry.id, "workspace 不可写：%s" % exc)]
+        return [Finding(ERROR, entry.id, "workspace 建不出来：%s" % exc)]
+
+    if not os.access(str(workspace), os.W_OK | os.X_OK):
+        return [Finding(ERROR, entry.id, "workspace 不可写：%s" % workspace)]
+
+    if probe:
+        try:
+            test = workspace / ".doctor-write-test"
+            test.write_text("x", encoding="utf-8")
+            test.unlink()
+        except OSError as exc:
+            return [Finding(ERROR, entry.id, "workspace 写不进去：%s" % exc)]
     return []
 
 

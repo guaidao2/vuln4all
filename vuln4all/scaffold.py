@@ -112,6 +112,9 @@ def create_module(directory: Path, module_id: str, force: bool = False) -> List[
         if path.exists() and not force:
             continue
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding="utf-8")
+        # 显式用 LF：开发在 Windows 上，不写死的话生成的会是 CRLF，
+        # 推到 Linux 之后跨平台 diff 全是噪音
+        with open(path, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(content)
         created.append(path)
     return created

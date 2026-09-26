@@ -38,7 +38,12 @@ CORE_TEMPLATES = str(Path(__file__).resolve().parent / "templates")
 
 
 def slug(module_id: str) -> str:
-    """把模块 id 变成能安全当文件名的形式：sqli/login_bypass -> sqli_login_bypass"""
+    """把模块 id 变成能安全放进 cookie 名里的形式：sqli/login_bypass -> sqli_login_bypass
+
+    只用来拼 cookie 名。cookie 名不能带 / 和空格，而且不同挂载点的 cookie 还有
+    SESSION_COOKIE_PATH 兜底区分，所以这里不需要保证单射。
+    模块名和 workspace 目录都不走这个函数 —— 它们各有更严的约束。
+    """
     return re.sub(r"[^0-9A-Za-z]+", "_", module_id).strip("_") or "module"
 
 
@@ -55,10 +60,15 @@ class Ctx:
         self.home = Path(home)
         #: 模块的私有目录。所有持久化（sqlite、上传文件……）都放这儿。
         #: 模块之间物理隔离，reset 就是清空这个目录再重跑 setup()。
-        self.workspace = self.home / "workspace" / slug(module_id)
+        #: 路径按模块 id 分层展开（sqli/login_bypass -> workspace/sqli/login_bypass），
+        #: 这样天然不会有两个模块撞到同一个目录。
+        self.workspace = self.home / "workspace" / Path(*module_id.split("/"))
         self.log = logger or logging.getLogger("vuln4all." + module_id)
         # 由模块 id 派生，保证重启后 session 不会失效
         self._secret = hashlib.sha256(("vuln4all:" + module_id).encode()).hexdigest()
+        #: create_app() 里实际用过的挂载键。registry 会拿它跟返回的 dict 比对，
+        #: 抓「多挂载点忘了传 mount=」这个不会报错的坑。
+        self.mounts_used = set()
 
     # ------------------------------------------------------------------ URL
 
@@ -136,6 +146,10 @@ class Ctx:
         app.secret_key = self._secret + ":" + (mount or "main")
         app.config["SESSION_COOKIE_NAME"] = "v4a_%s_%s" % (slug(self.id), mount or "main")
         app.config["SESSION_COOKIE_PATH"] = self.mount_path(mount)
+        # 记一笔，registry 会拿它跟 create_app() 返回的键比对：
+        # 多挂载点忘了传 mount= 的话，两个 app 会共用 cookie 名和 path，
+        # session 互相覆盖，而且一声不响
+        self.mounts_used.add(mount)
         # 显式写出来，好让这道 CSRF 题的教学点站得住脚：
         # 同一个 host 下 SameSite=Lax 挡不住跨路径的 CSRF
         app.config["SESSION_COOKIE_SAMESITE"] = "Lax"

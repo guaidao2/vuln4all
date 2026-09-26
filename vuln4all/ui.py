@@ -18,11 +18,35 @@ DANGER_BANNER = "这是故意留洞的靶场。只在本机或隔离环境跑，
 
 
 def _safe_next(value: str) -> str:
-    """允许重定向回来的路径只能是站内相对路径，避免开放重定向。"""
+    """允许重定向回来的路径只能是站内相对路径，避免开放重定向。
+
+    要挡住的不只是 //evil.com：
+      · /\\evil.com —— 有些浏览器把 \\ 当 /，就变成协议相对 URL
+      · /\\evil.com 的反斜杠变体、以及带控制字符的写法
+      · javascript: / data: 这类带 scheme 的
+    """
     value = (value or "").strip()
+    if any(ch in value for ch in ("\\", "\r", "\n", "\t", ":")):
+        return "/"
     if value.startswith("/") and not value.startswith("//"):
         return value
     return "/"
+
+
+def _same_origin(origin: str, host: str) -> bool:
+    """来源校验：只在浏览器会带 Origin 的时候才校验（curl 不带，就放行）。
+
+    这不是要跟 CSRF 比谁更强 —— 它只是防止你浏览别的网页时，那个页面偷偷
+    对你的本地靶场发一个 POST 把题目全重置了。curl / 脚本不受影响。
+    """
+    origin = (origin or "").strip()
+    if not origin:
+        return True
+    if origin in ("null", "file://"):
+        return False
+    from urllib.parse import urlsplit
+
+    return (urlsplit(origin).netloc or "").lower() == (host or "").lower()
 
 
 def create_core_app(registry: Registry, home: Path) -> Flask:
@@ -63,6 +87,17 @@ def create_core_app(registry: Registry, home: Path) -> Flask:
 
     @app.route(RESET_URL, methods=["POST"])
     def reset():
+        if not _same_origin(request.headers.get("Origin", ""), request.host):
+            return (
+                render_template(
+                    "vuln4all/module_error.html",
+                    message="这个重置请求来自别的站点，已拒绝。",
+                    target="/",
+                    title="拒绝",
+                ),
+                403,
+            )
+
         module_id = request.form.get("id", "").strip()
         target = _safe_next(request.form.get("next", ""))
 

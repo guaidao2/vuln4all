@@ -130,7 +130,13 @@ def create_app(self, ctx):
 
 **多挂载点的模块，`ctx.flask()` 一定要传 `mount="键名"`。** 它会顺手把
 session cookie 的名字和路径按挂载点隔离开 —— 不这么做的话，同一个域名下
-几个挂载点的 session 会互相覆盖，而且错得很难查。
+几个挂载点的 session 会互相覆盖，而且错得很难查。**`doctor` 会检查这件事**：
+`create_app()` 返回的挂载键，如果在 `ctx.flask()` 里没登记过，直接报错。
+
+挂载点撞车也是硬拦的：路径撞上 core 的保留前缀（`/__vuln4all`、`/v`）
+或者别的模块抢先占了，那个挂载点会被**摘掉**（不是只记一条警告），
+`doctor` 报 ERROR。摘掉的是主挂载点的话，这道题直接判加载失败 ——
+一道写错的题不该把别人的题或者 core 的体检页顶掉。
 
 ## 生成 URL
 
@@ -150,14 +156,19 @@ ctx.url("attacker", "/")       # -> /evil-site/
 
 ## 状态与重置
 
-每个模块有一个**私有目录**：`ctx.workspace`，也就是 `workspace/<模块id>/`。
-模块所有持久化的东西（sqlite、上传的文件……）都放这儿，模块之间物理隔离。
+每个模块有一个**私有目录**：`ctx.workspace`，也就是 `workspace/<模块id>/`，
+模块 id 里的 `/` 会展开成目录层级。比如 `sqli/login_bypass` 的私有目录就是
+`workspace/sqli/login_bypass/`。模块所有持久化的东西（sqlite、上传的文件……）
+都放这儿，模块之间物理隔离。
 
 重置就三步，core 全包了：
 
 ```
-清空 workspace/<模块id>/  →  调用模块的 reset(ctx)（如果有）  →  重新 setup(ctx)
+摘掉初始化标记  →  清空 workspace/<模块id>/  →  重新 setup(ctx)
 ```
+
+先摘标记是为了万一中途炸了，下次启动会重跑 `setup()`，而不是看到一个空目录
+却以为已经初始化过了。整个过程持锁，免得并发 reset 交叉出一个半死的目录。
 
 所以**你只要把 `setup()` 写成可重复执行的，就一行 reset 代码都不用写**。
 页面上那个「重置这题」按钮和 `vuln4all reset` 命令都是走这条路。

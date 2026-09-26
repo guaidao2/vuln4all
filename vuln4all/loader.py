@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
+import re
 import sys
 from pathlib import Path
 
@@ -13,8 +15,15 @@ ENTRY_FILE = "module.py"
 
 
 def module_name_for(module_id: str) -> str:
-    """给模块起一个不可能和别人撞车的 Python 模块名。"""
-    return "v4a_mod_" + module_id.replace("/", "__").replace("-", "_")
+    """给模块起一个**保证唯一**的 Python 模块名。
+
+    光把 / 和 - 换成 _ 是不够的：sqli/login-bypass 和 sqli/login_bypass 会得到
+    同一个名字，后加载的把先加载的从 sys.modules 里顶掉，而且一声不响。
+    所以尾巴上挂一段 id 的哈希 —— 可读的部分留着好看，唯一性由哈希保证。
+    """
+    readable = re.sub(r"[^0-9A-Za-z]+", "_", module_id).strip("_") or "module"
+    digest = hashlib.sha1(module_id.encode("utf-8")).hexdigest()[:8]
+    return "v4a_mod_%s_%s" % (readable, digest)
 
 
 def load_vuln_class(directory: Path, module_id: str) -> tuple:

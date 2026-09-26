@@ -6,8 +6,8 @@
 
 from __future__ import annotations
 
-import posixpath
 import shutil
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, List, Optional
@@ -18,8 +18,11 @@ from .loader import ENTRY_FILE, load_vuln_class
 
 MARKER = ".initialized"
 
-#: 这个前缀下的路径归 core 自己用，模块不许占用
-RESERVED_PREFIXES = ("/__vuln4all", "/v", "/")
+#: core 自己用的前缀，其下任何路径模块都不许占
+RESERVED_PREFIXES = ("/__vuln4all",)
+#: 只禁止「精确占住」的路径。注意 "/v" 是模块的聚居区 ——
+#: 模块就该住在 /v/<模块id>/ 里，但不许直接占住 /v 或 / 本身。
+RESERVED_EXACT = ("/", "/v")
 
 
 @dataclass
@@ -70,11 +73,15 @@ class ModuleEntry:
 
 class Registry:
     def __init__(self, home: Path):
-        self.home = Path(home)
+        # 统一 resolve：后面要拿它跟目录的 parents 做比较，相对路径比不中
+        self.home = Path(home).resolve()
         self.entries: List[ModuleEntry] = []
         self.broken_dirs: List[tuple] = []  # (目录, 说明)
         self.conflicts: List[str] = []
         self.skipped_mounts: List[tuple] = []  # (模块, 路径, 已被谁占了)
+        # reset 会删目录再重建，被并发的请求线程或另一个 reset 插进来就半死不活
+        self._reset_lock = threading.Lock()
+        self._warnings_lock = threading.Lock()
 
     # ------------------------------------------------------------- 查询
 
@@ -103,9 +110,10 @@ class Registry:
     def mount_map(self) -> dict:
         """{URL 前缀: (模块, 挂载键, WSGI 应用)}
 
-        撞车的挂载点保留先注册的那个，后面的丢掉并记进 skipped_mounts ——
-        一个模块写错了不该把别人的题也顶掉。
+        冲突的挂载点在 _resolve_conflicts 里就已经被摘掉了，这里只管组装。
+        每次调用都重算 skipped_mounts，免得清单页重复显示同一条。
         """
+        self.skipped_mounts = []
         result = {}
         for entry in self.entries:
             if not entry.ok:
@@ -137,7 +145,7 @@ class Registry:
     def discover(cls, home: Path, setup: bool = True) -> "Registry":
         reg = cls(home)
         reg._scan(setup=setup)
-        reg._check_conflicts()
+        reg._resolve_conflicts()
         return reg
 
     def _scan(self, setup: bool) -> None:
@@ -215,6 +223,23 @@ class Registry:
                 entry.error = "挂载键 %r 对应的值不是 WSGI 应用（不可调用）" % key
                 return
         entry.apps = dict(apps)
+
+        # 多挂载点最常见、也最隐蔽的错：第二个 app 忘了传 mount=，
+        # 于是两个 app 共用同一个 session cookie 名和 path，互相覆盖。
+        # 这个错不会抛异常，只会让登录状态莫名其妙地串。
+        wrong_mounts = sorted(set(apps) - entry.ctx.mounts_used)
+        if wrong_mounts:
+            entry.problems.append(
+                "挂载键 %s 对应的 app 不是用 ctx.flask(..., mount=%r) 建的 —— "
+                "它的 session cookie 会和别的主入口共用，登录状态会串。"
+                "请改成 ctx.flask(__name__, mount=%r)"
+                % (
+                    "、".join(repr(k) for k in wrong_mounts),
+                    wrong_mounts[0],
+                    wrong_mounts[0],
+                )
+            )
+
         entry.mounts = [
             MountSpec(
                 key=key,
@@ -227,28 +252,62 @@ class Registry:
         if setup:
             self._ensure_setup(entry)
 
-    def _check_conflicts(self) -> None:
+    def _resolve_conflicts(self) -> None:
+        """算挂载点冲突，并且**真的把冲突的那个摘掉**。
+
+        只记录不拦截是不够的：一个模块声明 {"path": "/__vuln4all/status"} 就能
+        按最长前缀命中 DispatcherMiddleware，把 core 的体检页/重置入口整个盖掉，
+        而且命令行只打印一句警告，照样把靶场起起来。所以这里直接摘掉。
+
+        摘掉单个挂载点，不牵连这个模块的其他入口；但如果被摘掉的是主挂载点
+        （键为 ""），这个模块就没法从清单页进出了，直接判加载失败。
+        """
+        # 模块之间按 id 排序决定谁先占位，保证每次启动结果一致
         seen: dict = {}
-        for entry in self.entries:
+        for entry in sorted(self.entries, key=lambda e: e.id):
             if not entry.ok:
                 continue
+            kept: List[MountSpec] = []
             for mount in entry.mounts:
                 path = mount.path.rstrip("/") or "/"
-                if path in ("", "/"):
-                    self.conflicts.append("%s 想把挂载点放在 / ，那是 core 的地盘" % entry.id)
+                reason = None
+
+                if path in RESERVED_EXACT:
+                    reason = "%s 是 core 或模块聚居区本身，不能占" % path
+                else:
+                    for reserved in RESERVED_PREFIXES:
+                        if path == reserved or path.startswith(reserved + "/"):
+                            reason = "撞上了 core 保留前缀 %s" % reserved
+                            break
+                if reason is None and path in seen:
+                    reason = "已经被 %s 占了" % seen[path]
+
+                if reason is None:
+                    seen[path] = entry.id
+                    kept.append(mount)
                     continue
-                if path.startswith("/__vuln4all"):
-                    self.conflicts.append(
-                        "%s 的挂载点 %s 撞上了 core 保留前缀 /__vuln4all" % (entry.id, path)
+
+                self.conflicts.append(
+                    "%s 的挂载点 %s 被摘掉了：%s" % (entry.id, mount.path, reason)
+                )
+                entry.problems.append("挂载点 %s 被摘掉：%s" % (mount.path, reason))
+                entry.apps.pop(mount.key, None)
+                if mount.key == "":
+                    entry.error = (
+                        "主挂载点 %s 被摘掉（%s），这道题没法从清单页进出" % (mount.path, reason)
                     )
-                if path in seen:
-                    self.conflicts.append(
-                        "%s 和 %s 都想挂在 %s" % (seen[path], entry.id, path)
-                    )
-                    continue
-                seen[path] = entry.id
+
+            entry.mounts = kept
+            if not entry.error and not entry.apps:
+                # apps 可能还有残留（键不在 mounts 里的），以 mounts 为准
+                entry.error = "所有挂载点都没挂上，这道题不可用"
 
     # --------------------------------------------------------------- 状态
+
+    def _note(self, entry: ModuleEntry, message: str) -> None:
+        """往 entry.warnings 追加要加锁 —— doctor 可能正在并发读这个列表。"""
+        with self._warnings_lock:
+            entry.warnings.append(message)
 
     def ensure_setup(self, entry: ModuleEntry) -> None:
         self._ensure_setup(entry)
@@ -265,34 +324,43 @@ class Registry:
             entry.instance.setup(ctx)
             marker.write_text("vuln4all\n", encoding="utf-8")
         except BaseException as exc:  # noqa: BLE001
-            entry.warnings.append("setup() 出错：%s: %s" % (type(exc).__name__, exc))
+            self._note(entry, "setup() 出错：%s: %s" % (type(exc).__name__, exc))
 
     def reset(self, entry: ModuleEntry) -> None:
-        """把一道题恢复出厂：清空它的 workspace，重跑 setup()。"""
+        """把一道题恢复出厂：清空它的 workspace，重跑 setup()。
+
+        全程持锁。reset 是「删目录 → 重建」这套非原子操作，被另一个 reset
+        或者正在跑的请求线程插进来，就会留下「marker 在、数据没了」的半死状态，
+        而且单进程 threaded=True，请求线程可能正握着这个库的 sqlite 连接。
+        """
         if entry.ctx is None or entry.instance is None:
             raise RuntimeError("模块没有加载成功，无法 reset")
 
         ctx = entry.ctx
-        try:
-            entry.instance.reset(ctx)
-        except BaseException as exc:  # noqa: BLE001
-            entry.warnings.append("模块自己的 reset() 出错：%s: %s" % (type(exc).__name__, exc))
+        with self._reset_lock:
+            # 先摘掉 marker：万一中途炸了，下次启动会重跑 setup，而不是
+            # 看到一个空目录却以为已经初始化过了
+            marker = ctx.workspace / MARKER
+            try:
+                marker.unlink()
+            except OSError:
+                pass
 
-        if ctx.workspace.exists():
-            for child in ctx.workspace.iterdir():
-                if child.is_dir() and not child.is_symlink():
-                    shutil.rmtree(child, ignore_errors=True)
-                else:
-                    try:
-                        child.unlink()
-                    except OSError:
-                        pass
-        ctx.workspace.mkdir(parents=True, exist_ok=True)
+            try:
+                entry.instance.reset(ctx)
+            except BaseException as exc:  # noqa: BLE001
+                self._note(entry, "模块自己的 reset() 出错：%s: %s" % (type(exc).__name__, exc))
 
-        entry.instance.setup(ctx)
-        (ctx.workspace / MARKER).write_text("vuln4all\n", encoding="utf-8")
+            if ctx.workspace.exists():
+                for child in ctx.workspace.iterdir():
+                    if child.is_dir() and not child.is_symlink():
+                        shutil.rmtree(child, ignore_errors=True)
+                    else:
+                        try:
+                            child.unlink()
+                        except OSError:
+                            pass
+            ctx.workspace.mkdir(parents=True, exist_ok=True)
 
-
-def join_url(base: str, *parts: str) -> str:
-    joined = posixpath.join(base.rstrip("/"), *[p.strip("/") for p in parts])
-    return "/" + joined.lstrip("/")
+            entry.instance.setup(ctx)
+            marker.write_text("vuln4all\n", encoding="utf-8")
