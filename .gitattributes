@@ -1,0 +1,11 @@
+# 这个项目的运行环境是 Linux（靶场部署在远端），源码一律 LF。
+# 不开这条的话，Windows 上 clone 出来的 shell 脚本会变成 CRLF，
+# 在 Linux 上跑 bash 会满屏 "\r: command not found"。
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
