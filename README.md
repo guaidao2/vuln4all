@@ -7,7 +7,7 @@
 
 作者：**guaidao2**
 
-要往里面加题目、改 core、或者接着往下做，看 **[开发文档](docs/DEVELOPMENT.md)**。
+想往里面加一道题，看 **[模块开发指南](docs/DEVELOPMENT.md)**。
 
 > **注意：这是故意留洞的靶场。只在本机或隔离的虚拟机里跑。**
 > 绝不要暴露到公网、生产网络，或者任何你能被别人访问到的地址。
@@ -241,8 +241,8 @@ vuln4all/
 │   ├── flask_session/forged_cookie/   进阶（Python 独有）
 │   ├── race_condition/coupon_redeem/  困难
 │   └── jwt/alg_none/                  困难
-├── tools/                       # 开发/验证工具
-│   ├── deploy.py                #   推到远端主机验证（本机不跑靶场）
+├── tools/                       # 辅助脚本
+│   ├── deploy.py                #   把一个项目副本同步到另一台机器
 │   └── verify.sh                #   端到端验证：起靶场 + 逐题打一遍
 └── workspace/                   # 运行时生成，每道题的私有数据，随时能删
 ```
@@ -308,21 +308,10 @@ vuln4all/
 - **没有 flag / 积分系统**，故意的。这是教学靶场，不是 CTF 平台：
   「打通了」由题目页面自己告诉你，学习靠每题的 `hint` / `solution` / `writeup.md`。
 
-## 部署到远程主机
+## 依赖
 
-`tools/deploy.py` 是用来把靶场推到一台远端机器上验证的（本机不要跑靶场）。
-它用 paramiko 走密码 SSH，会把项目同步过去、建好目录。
-
-```bash
-python3 tools/deploy.py --host 192.168.44.149 --user root --password root \
-    --path /root/Desktop/vuln4all
-```
-
-Kali 上装 Python 包**用 apt，不要用 pip**：
-
-```bash
-apt install python3-flask
-```
+运行时只依赖 Flask：`pip install flask`。
+（系统托管 Python 的发行版，比如 Debian / Kali，用 `apt install python3-flask`。）
 
 ## License
 

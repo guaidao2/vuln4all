@@ -914,6 +914,40 @@ PY
 )
 expect_has "代码和文档里没有表情符号" "EMOJI_COUNT=0" "$hygiene"
 
+# 面向别人的文档里不该出现内网地址、明文口令这类只属于某一套环境的信息。
+# （靶场题目内容里的假内网地址是有意为之，所以这里只扫 README 和 docs/。）
+leak=$(python3 - <<'PY'
+import pathlib, re
+
+PATTERNS = [
+    (re.compile(r"\b10\.\d{1,3}\.\d{1,3}\.\d{1,3}\b"), "内网地址"),
+    (re.compile(r"\b172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}\b"), "内网地址"),
+    (re.compile(r"\b192\.168\.\d{1,3}\.\d{1,3}\b"), "内网地址"),
+    # --password 后面跟的是字面值（尖括号包裹的占位符不算）
+    (re.compile(r"--password[ \t]+[^\s<]"), "明文口令参数"),
+]
+
+targets = [pathlib.Path("README.md")]
+docs = pathlib.Path("docs")
+if docs.is_dir():
+    targets.extend(sorted(docs.rglob("*.md")))
+
+hits = []
+for path in targets:
+    if not path.is_file():
+        continue
+    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        for pattern, label in PATTERNS:
+            if pattern.search(line):
+                hits.append("%s:%d (%s) %s" % (path.as_posix(), lineno, label, line.strip()[:60]))
+
+print("LEAK_COUNT=%d" % len(hits))
+for item in hits[:5]:
+    print("  " + item)
+PY
+)
+expect_has "文档里没有内网地址 / 明文口令" "LEAK_COUNT=0" "$leak"
+
 step "结果"
 printf '  通过 %d 项，失败 %d 项\n' "$PASS" "$FAIL"
 if [ "$FAIL" != "0" ]; then

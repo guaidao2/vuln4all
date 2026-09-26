@@ -1,16 +1,15 @@
 #!/usr/bin/env python3
-"""把 vuln4all 同步到一台远端主机上跑。
+"""把一个项目副本同步到另一台机器上（走 SFTP）。
 
-本机不要跑这个靶场 —— 它是故意留洞的。开发在本地，验证在远程。
+靶场是故意留洞的，跑之前先想清楚目标机器是不是隔离环境。
 
-    python3 tools/deploy.py --host 192.168.44.149 --user root --password root \
-        --path /root/Desktop/vuln4all
+    python3 tools/deploy.py --host <主机> --user <用户> --path <远端目录>
 
 推完之后可以直接带 --run 跑命令：
 
     python3 tools/deploy.py ... --run "python3 -m vuln4all doctor"
 
-依赖 paramiko（走密码 SSH）。Kali 上装：apt install python3-paramiko
+依赖 paramiko（走密码 SSH）：pip install paramiko
 """
 
 from __future__ import annotations
@@ -24,7 +23,7 @@ from pathlib import Path
 try:
     import paramiko
 except ImportError:  # pragma: no cover
-    print("需要 paramiko。Kali 上：apt install python3-paramiko", file=sys.stderr)
+    print("需要 paramiko：pip install paramiko", file=sys.stderr)
     raise SystemExit(2)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
