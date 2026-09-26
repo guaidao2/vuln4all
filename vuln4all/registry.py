@@ -51,6 +51,50 @@ class ModuleEntry:
     def ok(self) -> bool:
         return self.error is None and bool(self.apps)
 
+    def run_check(self) -> dict:
+        """跑模块自己的 check()，把结果规范化成一个固定形状。
+
+        返回 {"supported", "solved", "objectives", "error"}：
+          · supported=False 表示这道题没实现 check()（不是错误）
+          · objectives 是 {目标名: bool}
+          · error 只在 check() 抛异常或返回了非法类型时才有值
+
+        **只读、可重复调用。** 对外面那几个入口（CLI / HTTP / 体检）都走这里。
+        """
+        blank = {"supported": False, "solved": False, "objectives": {}, "error": None}
+        if self.instance is None or self.ctx is None:
+            return dict(blank, error=self.error)
+
+        try:
+            raw = self.instance.check(self.ctx)
+        except Exception as exc:  # noqa: BLE001 - check 抛什么都得兜住，但别吞 KeyboardInterrupt
+            return dict(
+                blank, supported=True, error="%s: %s" % (type(exc).__name__, exc)
+            )
+
+        if raw is None:
+            return blank
+
+        if isinstance(raw, dict):
+            objectives = {str(key): bool(value) for key, value in raw.items()}
+            return {
+                "supported": True,
+                # 空字典不算通关：一道题总得有点目标
+                "solved": bool(objectives) and all(objectives.values()),
+                "objectives": objectives,
+                "error": None,
+            }
+
+        if isinstance(raw, bool):
+            return {"supported": True, "solved": raw, "objectives": {}, "error": None}
+
+        return dict(
+            blank,
+            supported=True,
+            error="check() 返回了 %s，只支持 bool 或 {目标名: bool}"
+            % type(raw).__name__,
+        )
+
     @property
     def display_name(self) -> str:
         return str(self.info.get("name") or self.id)
@@ -96,6 +140,54 @@ class Registry:
 
     def failed(self) -> List[ModuleEntry]:
         return [e for e in self.entries if not e.ok]
+
+    def check_report(self) -> dict:
+        """把所有题目的 check() 结果汇总成一份机器可读的报告。
+
+        这是整个靶场对外的那一个接口：CLI 的 `vuln4all check`、
+        HTTP 的 /__vuln4all/check、清单页的进度统计都走它。
+        """
+        modules = []
+        solved = 0
+        supported = 0
+        errored = 0
+        failed = 0
+
+        for entry in self.entries:
+            result = entry.run_check()
+            if result["supported"]:
+                supported += 1
+            if result["solved"]:
+                solved += 1
+            if result["error"] and entry.ok:
+                errored += 1
+            if not entry.ok:
+                failed += 1
+            modules.append(
+                {
+                    "id": entry.id,
+                    "name": entry.display_name,
+                    "difficulty": str(entry.info.get("difficulty") or ""),
+                    "cwe": str(entry.info.get("cwe") or ""),
+                    "mount": entry.main_path,
+                    "loaded": entry.ok,
+                    "supported": result["supported"],
+                    "solved": result["solved"],
+                    "objectives": result["objectives"],
+                    "error": result["error"],
+                }
+            )
+
+        return {
+            "total": len(modules),
+            "supported": supported,
+            "solved": solved,
+            "errored": errored,
+            # 加载失败的模块单独计数：它和"check 出错"不是一回事，但对 CI /
+            # 基准测试来说同样是不能忽略的坏消息，不能藏在 errored 里。
+            "failed": failed,
+            "modules": modules,
+        }
 
     def categories(self) -> List[tuple]:
         """[(分类名, [模块…]), …]，按分类名和模块名排序。"""
@@ -252,6 +344,10 @@ class Registry:
             for key in apps
         ]
 
+        # 把「跑一遍这道题的 check()」绑进 ctx，这样模块自己的模板也能拿到进度
+        # （base.html 的进度区块走 VULN.check_view()）。
+        entry.ctx.bind_checker(entry.run_check)
+
         if setup:
             self._ensure_setup(entry)
 
@@ -358,15 +454,19 @@ class Registry:
             except BaseException as exc:  # noqa: BLE001
                 self._note(entry, "模块自己的 reset() 出错：%s: %s" % (type(exc).__name__, exc))
 
-            if ctx.workspace.exists():
-                for child in ctx.workspace.iterdir():
-                    if child.is_dir() and not child.is_symlink():
-                        shutil.rmtree(child, ignore_errors=True)
-                    else:
-                        try:
-                            child.unlink()
-                        except OSError:
-                            pass
+            # 清目录要和进度写入互斥：否则一个正好在写的 mark() 会在清理之后
+            # 把 progress.json 重新落盘，进度就从 reset 底下漏过去了 ——
+            # 而"reset 之后所有 check() 回到未通关"是验证脚本里的一条硬断言。
+            with ctx.progress.lock:
+                if ctx.workspace.exists():
+                    for child in ctx.workspace.iterdir():
+                        if child.is_dir() and not child.is_symlink():
+                            shutil.rmtree(child, ignore_errors=True)
+                        else:
+                            try:
+                                child.unlink()
+                            except OSError:
+                                pass
             ctx.workspace.mkdir(parents=True, exist_ok=True)
 
             entry.instance.setup(ctx)

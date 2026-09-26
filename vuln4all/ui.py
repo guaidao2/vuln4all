@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from flask import Flask, redirect, render_template, request, url_for
+from flask import Flask, jsonify, redirect, render_template, request, url_for
 
 from . import doctor as doctor_mod
 from .contract import DIFFICULTIES, difficulty_key
@@ -16,6 +16,7 @@ STATIC_URL_PATH = "/__vuln4all/static"
 STATUS_URL = "/__vuln4all/status"
 RESET_URL = "/__vuln4all/reset"
 RESET_DONE_URL = "/__vuln4all/reset-done"
+CHECK_URL = "/__vuln4all/check"
 
 DANGER_BANNER = "这是故意留洞的靶场。只在本机或隔离环境跑，绝不要暴露到公网或生产网络。"
 
@@ -89,6 +90,7 @@ def create_core_app(registry: Registry, home: Path) -> Flask:
         V4A_STATIC=STATIC_URL_PATH,
         V4A_STATUS=STATUS_URL,
         V4A_RESET=RESET_URL,
+        V4A_CHECK=CHECK_URL,
         V4A_DIFF_KEY=difficulty_key,
         V4A_BANNER=DANGER_BANNER,
     )
@@ -96,11 +98,40 @@ def create_core_app(registry: Registry, home: Path) -> Flask:
 
     @app.route("/")
     def index():
+        report = registry.check_report()
         return render_template(
             "vuln4all/index.html",
             registry=registry,
             difficulties=_difficulty_breakdown(registry),
+            report=report,
+            solved_ids={m["id"] for m in report["modules"] if m["solved"]},
             title="vuln4all 靶场",
+        )
+
+    @app.route(CHECK_URL)
+    def check_all():
+        """整份进度报告。给脚本、扫描器、AI agent 用的那一个接口。"""
+        return jsonify(registry.check_report())
+
+    @app.route(CHECK_URL + "/<path:module_id>")
+    def check_one(module_id):
+        entry = registry.get(module_id.strip("/"))
+        if entry is None:
+            return jsonify({"error": "没有这个题目", "id": module_id}), 404
+        result = entry.run_check()
+        return jsonify(
+            {
+                "id": entry.id,
+                "name": entry.display_name,
+                "difficulty": str(entry.info.get("difficulty") or ""),
+                "cwe": str(entry.info.get("cwe") or ""),
+                "mount": entry.main_path,
+                "loaded": entry.ok,
+                "supported": result["supported"],
+                "solved": result["solved"],
+                "objectives": result["objectives"],
+                "error": result["error"],
+            }
         )
 
     @app.route(STATUS_URL)

@@ -8,6 +8,14 @@
     故意留洞的 Web 靶场。加一道题就是把一个模块丢进
     <code>modules/&lt;分类&gt;/&lt;名字&gt;/</code> —— 不用登记，也不用改 core。
   </p>
+  {% if report.supported %}
+    <p class="page-sub">
+      已通关 <strong class="ok">{{ report.solved }}</strong> / {{ report.supported }} 道
+      （支持自动判定的一共 {{ report.supported }} 道，另有
+      {{ report.total - report.supported }} 道没实现 <code>check()</code>）。
+      机器可读版本：<a class="mono" href="{{ V4A_CHECK }}">{{ V4A_CHECK }}</a>
+    </p>
+  {% endif %}
 </div>
 
 {% if not registry.entries %}
@@ -69,6 +77,9 @@
           <a class="card-title" href="{{ entry.main_path }}/">{{ entry.display_name }}</a>
           <div class="card-meta">
             <span class="mono">{{ entry.id }}</span>
+            {% if entry.id in solved_ids %}
+              <span class="badge badge-solved">已通关</span>
+            {% endif %}
             {% if entry.info.difficulty %}
               <span class="badge badge-diff badge-diff-{{ V4A_DIFF_KEY(entry.info.difficulty) }}">{{ entry.info.difficulty }}</span>
             {% endif %}

@@ -60,6 +60,8 @@ python3 main.py --lan                  # 开放到局域网
 python3 main.py --port 9000            # 换端口
 python3 main.py list                   # 列出所有题目
 python3 main.py list --category sqli   # 只看某一类
+python3 main.py check                  # 报告每道题的通关进度
+python3 main.py check --json           # 同上，机器可读
 python3 main.py reset sqli/login_bypass  # 把一道题恢复出厂
 python3 main.py reset --all            # 全部恢复
 python3 main.py doctor                 # 体检：模块合不合规、能不能跑

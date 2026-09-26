@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -189,6 +190,57 @@ def cmd_reset(args) -> int:
     return 0
 
 
+# ------------------------------------------------------------- 通关进度
+
+
+def cmd_check(args) -> int:
+    registry = _load(args.home)
+    report = registry.check_report()
+
+    want = args.module.strip("/") if args.module else None
+    if want and registry.get(want) is None:
+        print("没有这个题目：%s" % args.module, file=sys.stderr)
+        return 2
+
+    # 加载失败和 check 出错都不是"跑通了"，退出码要反映出来
+    exit_code = 1 if (report["errored"] or report["failed"]) else 0
+
+    if args.json:
+        payload = report
+        if want:
+            # --json 也要尊重位置参数，不然脚本会以为拿到的是单题结果
+            payload = dict(
+                report,
+                modules=[m for m in report["modules"] if m["id"] == want],
+            )
+        print(json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=False))
+        return exit_code
+
+    rows = [m for m in report["modules"] if want is None or m["id"] == want]
+    for item in rows:
+        if not item["loaded"]:
+            print("  ??   %-36s 加载失败" % item["id"])
+            continue
+        if not item["supported"]:
+            print("  --   %-36s 没实现 check()" % item["id"])
+            continue
+        print("  %-3s %-36s %s" % ("OK" if item["solved"] else "--", item["id"],
+                                  "已通关" if item["solved"] else "未通关"))
+        for name, done in item["objectives"].items():
+            print("         [%s] %s" % ("x" if done else " ", name))
+        if item["error"]:
+            print("         !! %s" % item["error"])
+
+    print()
+    print(
+        "  已通关 %d / %d（%d 道实现了 check()，%d 道 check 出错，%d 道加载失败）"
+        % (report["solved"], report["total"], report["supported"],
+           report["errored"], report["failed"])
+    )
+    print("  机器可读版本：vuln4all check --json，或者 GET %s" % "/__vuln4all/check")
+    return exit_code
+
+
 # ------------------------------------------------------------------- 体检
 
 
@@ -262,6 +314,15 @@ def build_parser() -> argparse.ArgumentParser:
     p_list = sub.add_parser("list", help="列出所有题目")
     p_list.add_argument("--category", default=None, help="只看某一类")
     p_list.set_defaults(func=cmd_list)
+
+    p_check = sub.add_parser(
+        "check",
+        help="报告每道题的通关进度",
+        description="跑每道题的 check()，报告当前进度。退出码只在有题目出错时才非 0。",
+    )
+    p_check.add_argument("module", nargs="?", default=None, help="只看某一道题")
+    p_check.add_argument("--json", action="store_true", help="输出 JSON（给脚本用）")
+    p_check.set_defaults(func=cmd_check)
 
     p_run = sub.add_parser(
         "run",

@@ -10,6 +10,7 @@
 其它子命令照常用：
 
     python main.py list             # 列出所有题目
+    python main.py check            # 报告每道题的通关进度
     python main.py doctor           # 体检
     python main.py reset --all      # 全部重置
     python main.py new xss/dom_based
@@ -28,7 +29,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 
 #: 支持 `python main.py` 这种「什么都不带就启动」的用法
-SUBCOMMANDS = ("list", "run", "reset", "doctor", "new")
+SUBCOMMANDS = ("list", "check", "run", "reset", "doctor", "new")
 
 
 def _argv() -> list:

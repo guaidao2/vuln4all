@@ -3,7 +3,23 @@
 输入被原样塞进 HTML，没有任何转义。
 """
 
+import re
+
 from vuln4all import Vuln, render_template, request
+
+#: 通关目标名。mark() 和 check() 共用同一个常量，免得拼错字。
+#: 注意：目标名会渲染到页面上，别把 payload 字面量写进来。
+GOAL = "让可执行的脚本标签被原样发回浏览器"
+
+#: 什么样的输入算"这是攻击载荷"。
+#: 要的是一个**真的标签**，因为只有标签才会被执行：
+#:   <script>...</script>
+#:   <img src=x onerror=...>、<svg onload=...>   （任何带 on* 事件处理器的标签）
+#: 光写 javascript: 或 onload= 不算 —— 那些会被当纯文字渲染在 <p> 里，不构成 XSS。
+PAYLOAD = re.compile(
+    r"(?is)<\s*script\b"                 # <script>
+    r"|<\s*[a-z][^>]*\son\w+\s*="        # 标签里带 on* 事件处理器
+)
 
 
 class ReflectSearch(Vuln):
@@ -42,6 +58,14 @@ class ReflectSearch(Vuln):
         @app.route("/")
         def index():
             keyword = request.args.get("q", "")
+            if PAYLOAD.search(keyword):
+                # 关键词会被 |safe 原样渲染进 HTML，所以到这一步脚本一定发出去了
+                ctx.progress.mark(GOAL)
             return render_template("search.html", keyword=keyword)
 
         return {"": app}
+
+    # ---------------------------------------------------------------- 进度
+
+    def check(self, ctx):
+        return {GOAL: ctx.progress.achieved(GOAL)}

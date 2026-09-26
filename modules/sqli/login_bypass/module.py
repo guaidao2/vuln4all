@@ -8,6 +8,9 @@ import sqlite3
 
 from vuln4all import Vuln, redirect, render_template, request, session, url_for
 
+#: 通关目标名。mark() 和 check() 共用同一个常量，免得拼错字。
+GOAL = "以 admin 身份登录，绕过了密码检查"
+
 
 class LoginBypass(Vuln):
     info = {
@@ -101,6 +104,9 @@ class LoginBypass(Vuln):
                 if row is not None:
                     session["user"] = row[0]
                     session["role"] = row[1]
+                    # 记进度。check() 读的就是这个，所以它不用去问某个浏览器。
+                    if row[1] == "admin":
+                        ctx.progress.mark(GOAL)
                     return redirect(url_for("welcome"))
                 if error is None:
                     error = "用户名或密码错误"
@@ -125,3 +131,8 @@ class LoginBypass(Vuln):
             return redirect(url_for("index"))
 
         return {"": app}
+
+    # ---------------------------------------------------------------- 进度
+
+    def check(self, ctx):
+        return {GOAL: ctx.progress.achieved(GOAL)}

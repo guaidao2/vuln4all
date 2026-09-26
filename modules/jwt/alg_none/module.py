@@ -30,6 +30,9 @@ ADMIN_KEYS = {
     "短信服务": "sms_live_7f3a9c1b4e8d",
 }
 
+#: 通关目标名。mark() 和 check() 共用同一个常量，免得拼错字。
+GOAL = "用一张 alg=none、根本没签名的 token 通过了管理员接口的鉴权"
+
 
 class JwtAlgNone(Vuln):
     info = {
@@ -98,8 +101,8 @@ class JwtAlgNone(Vuln):
         sig = hmac.new(SECRET.encode(), signing_input.encode(), hashlib.sha256).digest()
         return signing_input + "." + self._b64e(sig)
 
-    def verify(self, token: str) -> dict:
-        """验签并返回载荷。抛 ValueError 表示不通过。"""
+    def verify(self, token: str) -> tuple:
+        """验签并返回 (头部, 载荷)。抛 ValueError 表示不通过。"""
         parts = token.split(".")
         if len(parts) != 3:
             raise ValueError("token 应该是三段，用 . 分开")
@@ -124,7 +127,7 @@ class JwtAlgNone(Vuln):
 
         # ↓↓↓ 洞就在这里：把 token 自己声明的 alg 当成事实 ↓↓↓
         if alg == "none":
-            return payload
+            return header, payload
         # ↑↑↑ 正确做法：算法必须由服务端**写死**（只接受 HS256 或只接受 RS256），
         #     绝不能从 token 里读。上面这几行应该直接变成：
         #     if alg != "hs256": raise ValueError("只接受 HS256") ↑↑↑
@@ -139,7 +142,7 @@ class JwtAlgNone(Vuln):
         if not hmac.compare_digest(expected, parts[2]):
             raise ValueError("签名不对")
 
-        return payload
+        return header, payload
 
     # ---------------------------------------------------------------- 应用
 
@@ -179,7 +182,7 @@ class JwtAlgNone(Vuln):
             if not token:
                 return render_template("token_error.html", message="没带 token"), 401
             try:
-                payload = self.verify(token)
+                _header, payload = self.verify(token)
             except ValueError as exc:
                 return render_template("token_error.html", message=str(exc)), 401
             return render_template("me.html", payload=payload)
@@ -190,9 +193,13 @@ class JwtAlgNone(Vuln):
             if not token:
                 return render_template("token_error.html", message="没带 token"), 401
             try:
-                payload = self.verify(token)
+                header, payload = self.verify(token)
             except ValueError as exc:
                 return render_template("token_error.html", message=str(exc)), 401
+
+            if str(header.get("alg", "")).strip().lower() == "none":
+                # 服务端接受了"不用验签"这个声明 —— 这张 token 是谁造的已经不重要了
+                ctx.progress.mark(GOAL)
 
             if payload.get("role") != "admin":
                 return (
@@ -207,3 +214,8 @@ class JwtAlgNone(Vuln):
             return render_template("keys.html", keys=ADMIN_KEYS, payload=payload)
 
         return {"": app}
+
+    # ---------------------------------------------------------------- 进度
+
+    def check(self, ctx):
+        return {GOAL: ctx.progress.achieved(GOAL)}

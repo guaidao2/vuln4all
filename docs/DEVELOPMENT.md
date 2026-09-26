@@ -302,12 +302,132 @@ def reset(self, ctx):
 
 参考实现：`modules/race_condition/coupon_redeem/module.py`。
 
-### 4.6 `check(ctx)`
+### 4.6 `check(ctx)`：机器可读的通关进度
 
-可选，目前**框架不消费它**。留给以后的自动化：让靶场能自己判定"这题有没有被打通"，
-从而支持回归测试、以及给扫描器/AI agent 当 benchmark。
+可选。**不实现就返回 `None`。**
 
-暂时不用实现。
+这是靶场对外承诺的那个接口 —— 扫描器、AI agent、以及靶场自己的回归测试都靠它
+判断"这道题有没有被打穿"。所以它不是"顺手做的好事"，而是有明确约束的合同。
+
+**返回值两种形态：**
+
+```python
+def check(self, ctx):
+    return True / False                     # 是否通关
+    # 或者
+    return {"目标名": True/False, ...}       # 每个小目标的达成情况
+```
+
+给 dict 时，**"通关" = 所有目标都达成**。所以只把"必须做到"的事列进来；
+纯技巧性的东西（比如"用绝对路径那种方式穿越")不要塞进去，否则会抬高通关门槛。
+
+**两条硬性约束：**
+
+1. **必须无副作用，而且可重复调用。** 同一个状态下调两次必须得到同样的结果。
+   `doctor` 会真的连着调两次来验证这一点。
+2. **不能依赖 request / session。** 它回答的是「服务端现在是什么状态」，
+   不是「某个浏览器刚才做了什么」。要记进度就用 `ctx.progress`。
+
+**目标名的注意点：**
+
+目标名会渲染到页面上（题目页的「进度」区块）。所以：
+
+- 写清楚，别只写 `solved`
+- **不要把 payload 字面量嵌进去**（例如别写 `uid=`、`{{7*7}}`）。
+  验证脚本会按页面内容做断言，目标名里带上这些字符串会污染断言 —— 这个坑踩过一次。
+
+**两种实现风格，按题的实际情况选：**
+
+```python
+# 风格一：直接从现有状态推（能推就别记，少一份状态少一处会不一致的地方）
+def check(self, ctx):
+    uploads = ctx.workspace / "uploads"
+    landed = [p for p in uploads.iterdir() if p.is_file()]
+    return {"让一个危险后缀的文件落进了上传目录":
+            any(p.suffix.lower() in BLOCKED_EXTENSIONS for p in landed)}
+
+
+# 风格二：请求处理时记一笔，check 读回来
+def check(self, ctx):
+    return {GOAL: ctx.progress.achieved(GOAL)}
+```
+
+参考实现：`upload/avatar`（风格一）、`sqli/login_bypass`（风格二）。
+
+### 4.7 `ctx.progress`：通关进度
+
+```python
+ctx.progress.mark("目标名")        # 记一笔，返回 True 表示这次是新达成的
+ctx.progress.achieved("目标名")    # 读
+ctx.progress.all()                 # {"目标名": True} 的快照
+```
+
+它落在 `workspace/<模块id>/progress.json`。**用文件而不是内存变量是有意的：**
+
+- `reset` 会清空整个 workspace，**进度自动归零** —— 模块不用为了进度去实现
+  `reset()` 那个钩子
+- 重启靶场不丢
+
+多线程安全（内部有锁，写盘用原子替换）。
+
+用它还是直接用现有状态？**能从状态推出来的就别存**。存一份就意味着多一处会和
+真实情况不一致的地方。`upload/avatar` 就是从上传目录推的，文件被删了进度自然回退。
+
+### 4.8 check 的对外接口
+
+三处入口，都是同一份数据（内部都走 `Registry.check_report()`）：
+
+**命令行**
+
+```bash
+python3 main.py check                  # 人类可读
+python3 main.py check --json           # 机器可读
+python3 main.py check sqli/login_bypass
+```
+
+退出码只在**有题目的 check() 出错**时非 0 —— 不是"没全通关就非 0"。
+（一道题没被打通是很正常的状态，不该当成命令失败。）
+
+**HTTP**
+
+```bash
+GET /__vuln4all/check                  # 整份报告
+GET /__vuln4all/check/<模块id>         # 单道题
+```
+
+单道题返回：
+
+```json
+{
+  "id": "sqli/login_bypass",
+  "name": "登录处的 SQL 注入",
+  "difficulty": "入门",
+  "cwe": "CWE-89",
+  "mount": "/v/sqli/login_bypass",
+  "loaded": true,
+  "supported": true,
+  "solved": true,
+  "objectives": { "以 admin 身份登录，绕过了密码检查": true },
+  "error": null
+}
+```
+
+整份报告多三个计数：`total` / `supported` / `solved` / `errored`。
+
+**页面**
+
+清单页顶部显示「已通关 X / Y」，每张已通关的卡片带一个"已通关"徽标；
+题目页有「进度」区块（目标清单）。这三处和上面两个接口是同一份数据。
+
+**当 benchmark 用的标准流程：**
+
+```bash
+curl -X POST http://<靶场>/__vuln4all/reset --data-urlencode 'id=*'   # 清成初始状态
+# ...让被测的扫描器 / agent 去随便打...
+curl -s http://<靶场>/__vuln4all/check                                # 读结果
+```
+
+`mount` 字段就是给被测方用的入口地址。
 
 ### 4.7 `Ctx` 完整 API
 
@@ -466,6 +586,9 @@ vuln4all reset --all             # 重置全部
   错误。单进程教学靶场里这可以接受（刷新一下就好）。真要挡住得在模块的数据访问
   上加锁。
 - **容错**：`reset --all` 逐题容错，一道题炸了不会让剩下的都重置不了。
+- **进度也一起清**：`ctx.progress` 落在 `workspace/<模块id>/progress.json`，
+  所以清目录的时候顺手就被带走了。模块**不用**为了进度单独写 `reset()`。
+  验证脚本里有一条专门测这个：`reset --all` 之后 `/__vuln4all/check` 必须回到 0。
 
 ### 6.4 线程模型
 
@@ -553,13 +676,19 @@ var(--r-sm) var(--r) var(--r-lg)
 `id="v4a-solved"` 这个约定**没有**被强制使用，但 `verify.sh` 的内容断言会先把
 `<details>` 折叠区剥掉再匹配，所以你的通关提示文字要出现在折叠区**外面**。
 
-### 7.5 一条硬约定：模块模板不要用 `<details>`
+### 7.5 两条硬约定
+
+**一、模块模板不要用 `<details>`。**
 
 `verify.sh` 的 `strip_teaching()` 会把页面里所有 `<details>...</details>` 剥掉，
 因为 core 外壳的「提示 / 答案」折叠区里写着完整解法，不剥掉的话任何内容断言都会
 变成"永远通过"的假阳性。
 
-所以模块自己的模板不要用 `<details>` 承载测试要断言的内容。
+**二、`check()` 的目标名里不要嵌 payload 字面量。**
+
+目标名会渲染进题目页的「进度」区块，而那个区块也在 `strip_teaching()` 的剥离范围内，
+所以它不会污染断言 —— 但为了不让人依赖这一点，仍然不要在目标名里写 `uid=`、
+`{{7*7}}` 这种字符串。它是给人看的描述。
 
 ---
 
@@ -649,6 +778,7 @@ python3 main.py [--home PATH] <子命令> [选项]
 | （不带） | 等价于 `run` |
 | `run` | 启动靶场 |
 | `list [--category X]` | 列出所有题目 |
+| `check [<id>] [--json]` | 报告通关进度。见 4.8 |
 | `reset <id>` / `reset --all` | 恢复出厂 |
 | `doctor [<id>] [--no-smoke]` | 体检。有 ERROR 时退出码 1 |
 | `new <分类>/<名字> [--force]` | 生成题目骨架 |
@@ -709,11 +839,14 @@ python3 main.py [--home PATH] <子命令> [选项]
 | ERROR | `workspace` 不可写 |
 | ERROR | 模块 `requirements.txt` 里的依赖没装 |
 | ERROR | 冒烟请求（`GET /`）返回 5xx 或抛异常 |
+| ERROR | `check()` 抛异常，或者返回了 bool / dict 之外的东西 |
 | WARN | `modules/` 下有放东西但没 `module.py` 的目录 |
 | WARN | 硬编码绝对路径（`href="/..."` 之类） |
 | WARN | `difficulty` 填了非标准值 |
+| WARN | `check()` 连着调两次结果不一样（有副作用） |
 | INFO | 建议补的 `info` 字段缺失 |
 | INFO | 每个挂载点冒烟通过 |
+| INFO | `check()` 当前的通关状态和目标计数 |
 
 几点说明：
 
@@ -740,19 +873,38 @@ CLI、契约加固、运行配置、仓库卫生 → 收尾（杀掉自己起的
 
 ### 12.1 一条重要的历史教训：假阳性
 
-第一版验证脚本犯过一个很隐蔽的错误：
+验证脚本犯过一个很隐蔽的错误，而且**犯过两次**：
 
-> 题目页自带「提示 / 答案」折叠区，**答案文本就嵌在每个页面的 HTML 里**。
-> 于是 `expect_has "命令注入拿到 uid=" "uid="` 这种断言**永远成立** ——
-> 因为答案里就有 `uid=`。漏洞真的坏了，测试照样绿。
+> **第一次**：题目页自带「提示 / 答案」折叠区，**答案文本就嵌在每个页面的
+> HTML 里**。于是 `expect_has "命令注入拿到 uid=" "uid="` 这种断言**永远成立**
+> —— 因为答案里就有 `uid=`。漏洞真的坏了，测试照样绿。
+>
+> **第二次**（加了 `check()` 进度区块之后）：那个区块把**目标名**渲染到页面上，
+> 而我给命令注入题写的目标名是"注入的命令真的被 shell 执行了（输出里出现 uid=）"
+> —— 里面就有 `uid=`。于是同一条否定断言 `expect_no ... "uid="` 被它顶掉了。
 
-修法是 `strip_teaching()`：断言前先把所有 `<details>...</details>` 剥掉。
+两次都是同一个病：**页面里除了模块自己的内容，还嵌着 core 注入的文字。**
 
-```bash
-page() { curl -s "$@" | strip_teaching; }     # 抓页面 + 剥教学文本
+修法是 `strip_teaching()`：断言前先把 core 注入的那两块剥掉。
+
+```python
+# <details>...</details>                      提示 / 答案折叠区
+# <section class="progress">...</section>     进度区块（目标名在里面）
 ```
 
-**写新断言时一律用 `page`，不要用裸 `curl`。**
+```bash
+page() { curl -s "$@" | strip_teaching; }     # 抓页面 + 剥掉 core 注入的文字
+```
+
+**两条纪律：**
+
+1. 写新断言时一律用 `page`，不要用裸 `curl`。
+2. **目标名里不要嵌 payload 字面量**（`uid=`、`{{7*7}}` 之类）。
+   它是给人看的描述，不是数据。
+
+顺带一个更强的做法：**能用 `check()` 就用 `check()`，别去抓页面文案。**
+`expect_solved` / `expect_unsolved` 问的是靶场自己算出来的状态，不碰 HTML，
+从根本上不会假阳性。
 
 ### 12.2 可用的断言辅助
 
@@ -761,6 +913,11 @@ page() { curl -s "$@" | strip_teaching; }     # 抓页面 + 剥教学文本
 | `expect_has "说明" "要找的子串" "$body"` | 子串必须出现 |
 | `expect_no "说明" "不该出现的子串" "$body"` | 子串必须不出现 |
 | `expect_code "说明" "$code" "200"` | HTTP 状态码相等 |
+| `expect_solved "<模块id>" "说明"` | `check()` 说这题已通关 |
+| `expect_unsolved "<模块id>" "说明"` | `check()` 说这题还没通关 |
+
+`expect_solved` / `expect_unsolved` 走 `GET /__vuln4all/check/<模块id>`。
+**这是首选**，因为它验证的不只是"漏洞还能打"，还有"check() 和实际状态一致"。
 
 失败会打印"返回体里找不到 [...]"，方便定位。
 
@@ -873,9 +1030,17 @@ SSRF 那道题的经典绕过是 `http://allowed@127.0.0.1/` —— `@` 前面�
 
 教训：**校验和连接必须用同一个解析器** —— 这本身就是那题要教的东西。
 
-### 14.4 模板里的答案文本污染测试
+### 14.4 core 注入的文字会污染测试断言
 
-见 12.1。
+题目页里除了模块自己的内容，还嵌着 core 注入的两块文字：**「提示 / 答案」折叠区**
+（答案原文）和**「进度」区块**（`check()` 的目标名）。
+
+按页面内容做断言时，这两块会让断言变成"永远通过"的假阳性。这个坑**踩过两次**：
+
+- 第一版：`uid=` 在答案里就有
+- 加了进度区块之后：给命令注入题写的目标名里又带上了 `uid=`
+
+修法见 12.1：`strip_teaching()` + 目标名里不嵌 payload。
 
 ### 14.5 `nohup` / systemd 下 stdout 是块缓冲
 
@@ -930,6 +1095,11 @@ SSRF 那道题的经典绕过是 `http://allowed@127.0.0.1/` —— `@` 前面�
 其他都有默认值或者有自动化帮你兜。**加新概念到这个列表里之前，先问一句：
 能不能不进契约？** `difficulty` 就是这么处理的 —— 它只是元数据，没变成机制。
 
+`check()` / `ctx.progress` 是唯一一次例外，而且是有代价才加的：它把"这题有没有
+被打穿"变成了对外承诺的接口，换来的是靶场能自己做回归、以及能被当 benchmark 用。
+加的时候守住了两条：**不实现也能跑**（返回 `None` 就是"不支持"），
+**进度落在 workspace 里**（所以 `reset` 不需要模块写任何额外代码）。
+
 **默认要安全。** 具体体现：默认只绑回环、挂载路径可预测、session 自动隔离、
 挂载冲突硬拦、`doctor` 主动挑毛病、`reset` 持锁且先摘标记。
 
@@ -951,7 +1121,8 @@ SSRF 那道题的经典绕过是 `http://allowed@127.0.0.1/` —— `@` 前面�
 - **没有 per-session 数据隔离。** 想加的话代价不小：得给每个会话一个独立的
   workspace 与数据库，是数据层的大改。
 
-- **`check()` 还没有消费者。** 契约留了这个钩子，但框架目前不调用它。
+- **`ctx.progress` 是全局的，不分会话。** 一道题被打通就是打通，谁打的都一样。
+  这跟其他状态（订单、上传的文件）是一致的，但和真人多开时的直觉不一致。
 
 - **模块加载只认 `module.py`。** 不能把入口文件改名。
 
@@ -961,12 +1132,12 @@ SSRF 那道题的经典绕过是 `http://allowed@127.0.0.1/` —— `@` 前面�
 
 按价值排序：
 
-1. **把 `check()` 用起来。** 现在每道题的"是否通关"是各模块自己在页面上算的。
-   统一成机器可读的接口之后，靶场就能自己跑回归，也能给扫描器 / AI agent
-   当 benchmark。
-2. **题目级的数据隔离。** 让每道题可以按会话开独立 workspace，以支持多人同时
-   认真打。
-3. **题目内容继续扩。** 差异化价值最高的是 Python 栈独有的题 —— 已有的
+1. **题目级的数据隔离。** 让每道题可以按会话开独立 workspace，以支持多人同时
+   认真打。这也是 `ctx.progress` 能变成 per-session 的前提。
+2. **题目内容继续扩。** 差异化价值最高的是 Python 栈独有的题 —— 已有的
    Jinja2 SSTI、Flask session 伪造、手搓 JWT 都属于这一类；PHP 靶场里做不出
    这种"真"。
+3. **`check()` 的消费者。** 现在写了一个 skill 驱动的 eval 流程：
+   `reset --all` → 让靶场自己跑一遍已知利用 → `check --json` 对答案。
+   可以把它包成 `tools/benchmark.py`，接扫描器或者 AI agent。
 4. **输出格式。** `list` / `doctor` 支持 `--json`，方便接别的工具。

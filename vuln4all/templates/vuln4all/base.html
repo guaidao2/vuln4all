@@ -60,6 +60,34 @@
       </div>
     </section>
 
+    {% set prog = VULN.check_view() %}
+    {% if prog.supported %}
+    <section class="progress">
+      <div class="progress-head">
+        <span class="progress-label">进度</span>
+        {% if prog.solved %}
+          <span class="badge badge-solved">已通关</span>
+        {% elif prog.objectives %}
+          <span class="progress-count">{{ prog.objectives.values() | select | list | length }} / {{ prog.objectives | length }}</span>
+        {% endif %}
+      </div>
+      {% if prog.objectives %}
+        <ul class="objectives">
+          {% for name, done in prog.objectives.items() %}
+            <li class="{% if done %}is-done{% endif %}"><span class="obj-mark" aria-hidden="true"></span>{{ name }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      {% if prog.error %}
+        <p class="err small">check() 出错了：{{ prog.error }}</p>
+      {% endif %}
+      <p class="muted small">
+        这是题目自己算出来的，机器可读版本在
+        <a class="mono" href="{{ V4A_CHECK }}/{{ VULN.id }}">{{ V4A_CHECK }}/{{ VULN.id }}</a>
+      </p>
+    </section>
+    {% endif %}
+
     <div class="acc-row">
       <details class="acc">
         <summary>

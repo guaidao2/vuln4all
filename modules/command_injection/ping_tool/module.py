@@ -10,6 +10,11 @@ from vuln4all import Vuln, render_template, request
 
 QUICK = ("127.0.0.1", "localhost", "gateway", "8.8.8.8")
 
+#: 通关目标名。mark() 和 check() 共用同一个常量，免得拼错字。
+#: 注意：目标名会渲染到页面上，所以别把 payload 字面量写进来 ——
+#: 那会污染验证脚本里按内容做的断言。
+GOAL = "注入的命令真的被 shell 执行了"
+
 
 class PingTool(Vuln):
     info = {
@@ -63,7 +68,10 @@ class PingTool(Vuln):
                 output = subprocess.getoutput(command)
                 # ↑↑↑ 正确做法：subprocess.run(["ping", "-c", "1", "-W", "1", host]) ↑↑↑
                 #     用一个 list 传参数，shell 根本不参与，元字符就失去了意义；
-                #     而且仍然要校验 host 是不是真的像个主机名（白名单正则）↑↑↑
+                #     而且仍然要校验 host 是不是真的像个主机名（白名单正则）。
+
+                if "uid=" in output:
+                    ctx.progress.mark(GOAL)
 
             return render_template(
                 "index.html",
@@ -75,3 +83,8 @@ class PingTool(Vuln):
             )
 
         return {"": app}
+
+    # ---------------------------------------------------------------- 进度
+
+    def check(self, ctx):
+        return {GOAL: ctx.progress.achieved(GOAL)}

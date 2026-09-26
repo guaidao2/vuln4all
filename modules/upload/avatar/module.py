@@ -14,6 +14,9 @@ BLOCKED_EXTENSIONS = [".php", ".php5", ".phtml", ".jsp", ".asp", ".aspx", ".py",
 
 SAFE_NAME = re.compile(r"[^0-9A-Za-z._\u4e00-\u9fff-]")
 
+#: 通关目标名。mark() 和 check() 共用同一个常量，免得拼错字。
+GOAL = "让一个危险后缀的文件落进了上传目录"
+
 
 class AvatarUpload(Vuln):
     info = {
@@ -153,3 +156,23 @@ class AvatarUpload(Vuln):
             )
 
         return {"": app}
+
+    # ---------------------------------------------------------------- 进度
+
+    def check(self, ctx):
+        """这道题的进度**不用记**，从上传目录里的文件直接推。
+
+        能直接从服务端状态推出来的，就别再存一份 —— 少一份状态就少一处
+        会和真实情况不一致的地方。文件被删掉了，进度自然就回退了。
+        """
+        uploads = ctx.workspace / "uploads"
+        try:
+            landed = [p for p in uploads.iterdir() if p.is_file()]
+        except OSError:
+            landed = []
+        dangerous = [
+            p.name
+            for p in landed
+            if os.path.splitext(p.name)[1].lower() in BLOCKED_EXTENSIONS
+        ]
+        return {GOAL: bool(dangerous)}

@@ -22,6 +22,11 @@
   {% if not has_errors %}
     <div class="notice notice-ok">没有致命问题。</div>
   {% endif %}
+  <p class="muted small">
+    通关进度的机器可读版本：<a class="mono" href="{{ V4A_CHECK }}">{{ V4A_CHECK }}</a>
+    （单道题是 <span class="mono">{{ V4A_CHECK }}/&lt;模块id&gt;</span>）。
+    命令行用 <code>python3 main.py check</code>。
+  </p>
 </div>
 
 {% if findings %}

@@ -8,6 +8,9 @@ import sqlite3
 
 from vuln4all import Vuln, redirect, render_template, request, session, url_for
 
+#: 通关目标名。mark() 和 check() 共用同一个常量，免得拼错字。
+GOAL = "用别人的订单号看到了不属于自己的订单"
+
 
 class OrderDetail(Vuln):
     info = {
@@ -115,12 +118,11 @@ class OrderDetail(Vuln):
                 return render_template("shop_notfound.html", order_id=order_id), 404
 
             row = rows[0]
-            return render_template(
-                "shop_order.html",
-                order=row,
-                # 页面自己知道这不是你的订单 —— 但服务端已经先把数据给它了
-                stolen=row["owner"] != session["user"],
-            )
+            # 页面自己知道这不是你的订单 —— 但服务端已经先把数据给它了
+            stolen = row["owner"] != session["user"]
+            if stolen:
+                ctx.progress.mark(GOAL)
+            return render_template("shop_order.html", order=row, stolen=stolen)
 
         @app.route("/logout")
         def logout():
@@ -128,3 +130,8 @@ class OrderDetail(Vuln):
             return redirect(url_for("index"))
 
         return {"": app}
+
+    # ---------------------------------------------------------------- 进度
+
+    def check(self, ctx):
+        return {GOAL: ctx.progress.achieved(GOAL)}

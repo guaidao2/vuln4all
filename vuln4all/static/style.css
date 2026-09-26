@@ -689,6 +689,94 @@ code {
   color: var(--muted);
 }
 
+/* 通关进度：题目页头部下面那一块 */
+.progress {
+  margin: 0 0 16px;
+  padding: 15px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+
+.progress-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.progress-label {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  color: var(--fg-2);
+}
+
+.progress-count {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.progress > p {
+  margin: 8px 0 0;
+}
+
+.objectives {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.objectives li {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  color: var(--fg-2);
+  font-size: 13.5px;
+}
+
+.objectives li.is-done {
+  color: var(--ok);
+}
+
+.obj-mark {
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  position: relative;
+  transform: translateY(1px);
+}
+
+.objectives li.is-done .obj-mark {
+  border-color: var(--ok);
+  background: var(--ok-soft);
+}
+
+.objectives li.is-done .obj-mark::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--ok);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+/* 通关徽标 */
+.badge-solved {
+  color: var(--ok);
+  border-color: rgba(61, 220, 151, 0.4);
+  background: var(--ok-soft);
+  font-weight: 600;
+}
+
 /* ---------------------------------------------------------------- 表格 */
 
 .findings {
@@ -949,6 +1037,10 @@ form label {
 
   .acc-body {
     padding-left: 18px;
+  }
+
+  .progress {
+    padding: 13px 15px;
   }
 
   .findings {

@@ -15,6 +15,9 @@ MARKER = "vuln4all{path_traversal_ok}"
 #: （靶场是 threaded=True，一个请求就够）。真实系统同样该有这个限制。
 MAX_READ = 256 * 1024
 
+#: 通关目标名。mark() 和 check() 共用同一个常量，免得拼错字。
+GOAL = "穿越出共享目录，读到里面的机密文件"
+
 
 def read_text_capped(path: Path) -> str:
     if not path.is_file():
@@ -132,6 +135,10 @@ class FileDownload(Vuln):
                     404,
                 )
 
+            hit = MARKER in content
+            if hit:
+                ctx.progress.mark(GOAL)
+
             return render_template(
                 "result.html",
                 name=name,
@@ -139,7 +146,12 @@ class FileDownload(Vuln):
                 # 服务器把用户输入解析成了这个绝对路径
                 resolved=str(target.expanduser()),
                 escaped=name.startswith("/") or ".." in name,
-                hit=MARKER in content,
+                hit=hit,
             )
 
         return {"": app}
+
+    # ---------------------------------------------------------------- 进度
+
+    def check(self, ctx):
+        return {GOAL: ctx.progress.achieved(GOAL)}

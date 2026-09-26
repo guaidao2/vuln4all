@@ -7,10 +7,14 @@
 """
 
 import sqlite3
+from urllib.parse import urlsplit
 
 from vuln4all import Vuln, redirect, render_template, request, session, url_for
 
 EVIL_PASSWORD = "pwned-by-csrf"
+
+#: 通关目标名。mark() 和 check() 共用同一个常量，免得拼错字。
+GOAL = "从一个不属于个人中心的页面发起了改密码请求（这就是 CSRF）"
 
 
 class PasswordChange(Vuln):
@@ -137,6 +141,20 @@ class PasswordChange(Vuln):
             else:
                 set_password(session["user"], new_password)
                 session["notice"] = "密码已经改成：%s" % new_password
+
+                # 进度判定：这次改密码是不是**从别的页面**发起的？
+                #
+                # 这里必须要求"有正面证据"，不能把"没有 Referer"也算成跨站 ——
+                # 不带 Referer 说明对面根本不是浏览器（curl、脚本），那不叫 CSRF。
+                # 浏览器发跨站表单时一定会带上 Referer，而且路径是攻击者页面的。
+                #
+                # 依赖：attacker 挂载点必须在受害站的路径前缀**之外**
+                # （见 info["mounts"] 里覆盖成 /evil-site 的那行）。如果哪天把攻击者站
+                # 挪回默认的 /v/csrf/password_change/attacker/，浏览器发来的 Referer
+                # 就会以受害站前缀开头，这里会漏报。
+                referer = request.headers.get("Referer", "").strip()
+                if referer and not urlsplit(referer).path.startswith(ctx.url("", "/")):
+                    ctx.progress.mark(GOAL)
             return redirect(url_for("profile"))
 
         @portal.route("/logout")
@@ -157,3 +175,8 @@ class PasswordChange(Vuln):
             )
 
         return {"": portal, "attacker": evil}
+
+    # ---------------------------------------------------------------- 进度
+
+    def check(self, ctx):
+        return {GOAL: ctx.progress.achieved(GOAL)}

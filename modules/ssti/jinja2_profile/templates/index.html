@@ -30,23 +30,20 @@
   <pre class="payload">{{ rendered }}</pre>
 {% endif %}
 
-<h2>里程碑</h2>
-{% if all_done %}
-  <div class="notice notice-ok">三个里程碑都打到了 —— <strong>这题通了</strong>，而且你真的拿到了命令执行。</div>
-{% endif %}
+<h2>三个里程碑分别是什么意思</h2>
+<p class="muted small">
+  哪个打到了、打到几个，看页面顶部那个「进度」区块 —— 数据来自这道题的
+  <code>check()</code>，和 <code>GET /__vuln4all/check/ssti/jinja2_profile</code> 是同一份。
+</p>
 <table class="findings">
-  <thead><tr><th>状态</th><th>里程碑</th><th>说明了什么</th></tr></thead>
+  <thead><tr><th>里程碑</th><th>它证明了什么</th></tr></thead>
   <tbody>
     {% for m in milestones %}
     <tr>
-      <td>{% if m.done %}<span class="ok">已达成</span>{% else %}<span class="muted">未达成</span>{% endif %}</td>
       <td>{{ m.name }}</td>
       <td class="muted">{{ m.why }}</td>
     </tr>
     {% endfor %}
-    {% if not milestones %}
-    <tr><td colspan="3" class="muted">提交一次欢迎语，这里会记录你打到哪一步了。</td></tr>
-    {% endif %}
   </tbody>
 </table>
 {% endblock %}

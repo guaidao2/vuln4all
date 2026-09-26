@@ -19,6 +19,9 @@ ALLOW_TOKEN = "img.vuln4all.local"
 #: 内网后台页面里的一句话。抓取结果里出现它 = SSRF 打通了。
 INTERNAL_MARKER = "内部管理后台"
 
+#: 通关目标名。mark() 和 check() 共用同一个常量，免得拼错字。
+GOAL = "让服务器替我们去访问了那个只允许本机访问的内网后台"
+
 MAX_BYTES = 6000
 MAX_HOPS = 3
 
@@ -148,6 +151,7 @@ class UrlPreview(Vuln):
 
                 if body is not None and INTERNAL_MARKER in body:
                     error = None
+                    ctx.progress.mark(GOAL)
 
             parsed_host = None
             if url:
@@ -179,3 +183,8 @@ class UrlPreview(Vuln):
             return render_template("admin.html", denied=False, marker=INTERNAL_MARKER)
 
         return {"": app, "internal": internal}
+
+    # ---------------------------------------------------------------- 进度
+
+    def check(self, ctx):
+        return {GOAL: ctx.progress.achieved(GOAL)}

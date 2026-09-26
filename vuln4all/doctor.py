@@ -103,11 +103,95 @@ def check(registry: Registry, smoke: bool = True) -> List[Finding]:
         findings.extend(_check_source(entry))
         findings.extend(_check_workspace(entry, probe=smoke))
         findings.extend(_check_requirements(entry))
+        findings.extend(_check_hook(entry, determinism=smoke))
 
         if smoke:
             findings.extend(_smoke(entry))
 
     return findings
+
+
+def _check_hook(entry, determinism: bool) -> List[Finding]:
+    """核对 check() 这个对外接口。
+
+    它现在是对外承诺的机器可读接口（CLI 的 check、HTTP 的 /__vuln4all/check、
+    扫描器和 AI agent 都会调），所以有三件事必须成立：
+    返回类型合法、不抛异常、**调两次结果一样**。
+    """
+    first = entry.run_check()
+
+    if first["error"]:
+        return [Finding(ERROR, entry.id, "check() 有问题：%s" % first["error"])]
+
+    if not first["supported"]:
+        # 没实现 check() 是允许的，不算问题，也不刷屏
+        return []
+
+    if not determinism:
+        return []
+
+    # 光比"两次结果一样"是不够的：一个会写文件、删文件、消费队列的 check()
+    # 只要每次都给出同样的答案就能蒙混过去。所以再比一次 workspace 的指纹 ——
+    # 文件清单 + progress.json 的内容。check() 是只读查询，这两样都不该变。
+    before = _workspace_fingerprint(entry)
+    first = entry.run_check()
+    second = entry.run_check()
+    after = _workspace_fingerprint(entry)
+
+    findings = []
+    if before != after:
+        findings.append(
+            Finding(
+                WARN,
+                entry.id,
+                "check() 动了 workspace 里的东西 —— 它必须是无副作用的只读查询"
+                "（前后文件清单/进度不一样）",
+            )
+        )
+
+    if (first["solved"], first["objectives"]) != (second["solved"], second["objectives"]):
+        findings.append(
+            Finding(
+                WARN,
+                entry.id,
+                "check() 连着调两次结果不一样（第一次 %r，第二次 %r）"
+                % (first["objectives"] or first["solved"], second["objectives"] or second["solved"]),
+            )
+        )
+        return findings
+
+    done = sum(1 for value in first["objectives"].values() if value)
+    total = len(first["objectives"])
+    if total:
+        state = "已通关" if first["solved"] else "未通关"
+        findings.append(
+            Finding(INFO, entry.id, "check()：%s（%d/%d 个目标）" % (state, done, total))
+        )
+    else:
+        findings.append(
+            Finding(INFO, entry.id, "check()：%s" % ("已通关" if first["solved"] else "未通关"))
+        )
+    return findings
+
+
+def _workspace_fingerprint(entry) -> tuple:
+    """workspace 的当前指纹：(排序后的文件清单, progress.json 的内容)。
+
+    用来验证 check() 没偷偷动东西。读不动就返回一个空指纹（不因为读不了
+    就报成"变了"）。
+    """
+    if entry.ctx is None:
+        return ()
+    workspace = entry.ctx.workspace
+    try:
+        names = tuple(sorted(p.name for p in workspace.iterdir()))
+    except OSError:
+        names = ()
+    try:
+        progress = (workspace / "progress.json").read_bytes()
+    except OSError:
+        progress = b""
+    return (names, progress)
 
 
 def _check_source(entry) -> List[Finding]:

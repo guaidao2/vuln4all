@@ -18,6 +18,9 @@ USERS = {
     "bob": ("bob123", "team", False),
 }
 
+#: 通关目标名。mark() 和 check() 共用同一个常量，免得拼错字。
+GOAL = "伪造出一个 admin=True 的会话（合法账号里没有这种组合）"
+
 
 class ForgedCookie(Vuln):
     info = {
@@ -117,6 +120,9 @@ class ForgedCookie(Vuln):
                     ),
                     403,
                 )
+            # 没有任何一个合法账号的 admin 是 True（见 USERS），所以能走到这里
+            # 就说明这个 session 是伪造出来的。
+            ctx.progress.mark(GOAL)
             return render_template(
                 "admin.html", denied=False, data=dict(session), raw=""
             )
@@ -127,3 +133,8 @@ class ForgedCookie(Vuln):
             return redirect(url_for("index"))
 
         return {"": app}
+
+    # ---------------------------------------------------------------- 进度
+
+    def check(self, ctx):
+        return {GOAL: ctx.progress.achieved(GOAL)}
