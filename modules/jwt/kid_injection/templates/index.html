@@ -1,0 +1,68 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}开放 API - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>开放 API 平台</h1>
+
+<h2>登录拿一个 token</h2>
+<form method="post" action="{{ url_for('login') }}">
+  <p><label>用户名<br><input type="text" name="user" value="alice"></label></p>
+  <p><label>密码<br><input type="text" name="password" value="alice123"></label></p>
+  <p><button type="submit" class="btn">登录</button></p>
+</form>
+
+{% if error %}<div class="notice notice-bad">{{ error }}</div>{% endif %}
+
+{% if token %}
+  <h2>你的 token</h2>
+  <pre class="payload">{{ token }}</pre>
+  <p class="muted small">
+    把它按 <span class="mono">.</span> 拆成三段，每段做 base64url 解码。
+    头部里有一个字段告诉服务端「用哪把密钥」。
+  </p>
+  <p class="muted small">
+    你的身份：<span class="mono">{{ claims }}</span> —— 注意角色是
+    <span class="mono">user</span>，而接口里有一块只有
+    <span class="mono">admin</span> 才看得到的东西。
+  </p>
+{% endif %}
+
+<h2>调接口</h2>
+<pre class="payload">curl -H 'Authorization: Bearer &lt;token&gt;' \
+     '{{ url_for('api_me') }}'
+
+# 也可以放查询参数里，方便手点
+{{ url_for('api_me') }}?token=&lt;token&gt;</pre>
+
+{% if result %}
+  <h2>接口返回</h2>
+  <pre class="payload">{{ result }}</pre>
+{% endif %}
+
+<h2>密钥是怎么管的</h2>
+<table class="findings">
+  <tbody>
+    <tr><th>当前活跃的 kid</th><td class="mono">{{ active_kid }}</td></tr>
+    <tr><th>密钥目录</th><td class="mono">{{ keys_dir }}</td></tr>
+  </tbody>
+</table>
+<p class="muted small">
+  为了支持密钥轮换，签名密钥按名字存在一个目录里，
+  token 头部的 <span class="mono">kid</span> 字段告诉服务端用哪一把。
+  这个设计本身是合理的 —— 真实的 JWT 实现都这么干。
+</p>
+<p class="muted small">
+  问题在实现上：<strong>那个 kid 值被直接当成了文件路径</strong>。
+  所以先想清楚一件事 —— 它最终会被拿去干什么？
+</p>
+
+<h2>跟另一道 JWT 题的关系</h2>
+<p class="muted small">
+  <span class="mono">jwt/alg_none</span> 那道题是「验签<strong>算法</strong>
+  从 token 自己声明的 alg 里读」，这一道是「验签<strong>密钥</strong>从 token
+  自己声明的 kid 里推」。
+</p>
+<p class="muted small">
+  两道的共同点是一句话：<strong>安全决策的参数不该由被验证的对象自己提供。</strong>
+</p>
+{% endblock %}

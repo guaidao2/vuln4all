@@ -1,0 +1,75 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}欢迎语设置 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>后台欢迎语设置</h1>
+<p class="muted small">
+  企业客户可以自定义登录后看到的欢迎语。它是一段 Jinja2 模板，
+  服务端用<strong>沙箱环境</strong>渲染。
+</p>
+
+<form method="post" action="{{ url_for('index') }}">
+  <p>
+    <textarea name="template" rows="4" style="width:100%;min-width:0">{{ source }}</textarea>
+  </p>
+  <p><button type="submit" class="btn">保存并预览</button></p>
+</form>
+
+<h2>可用的变量</h2>
+<table class="findings">
+  <tbody>
+    {% for k, v in context.items() %}
+    <tr><th class="mono">{{ k }}</th><td class="mono">{{ v }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if error %}
+  <div class="notice notice-bad">
+    <strong>渲染出错：</strong><br><span class="mono">{{ error }}</span>
+  </div>
+{% endif %}
+
+{% if rendered is not none %}
+  <h2>渲染结果</h2>
+  <pre class="payload">{{ rendered }}</pre>
+  <p class="muted small">
+    这就是最终发给浏览器的内容。能让<strong>命令的输出</strong>出现在这里，
+    就说明逃出沙箱了。
+  </p>
+{% endif %}
+
+<h2>沙箱拉黑了这些名字</h2>
+<pre class="payload">{% for n in blocked %}{{ n }}   {% endfor %}</pre>
+<p class="muted small">
+  这份黑名单是开发自己写的 —— 他觉得 Jinja 默认那个沙箱"太严了"，
+  取个 <span class="mono">__dict__</span> 都不行，业务上不方便，
+  于是改成"只拉黑几个听起来最危险的名字"。
+</p>
+<p class="muted small">
+  数一数它漏了什么。<strong>按名字拉黑这条路走不通</strong> ——
+  而且接下来你会看到，真正的问题比"漏了一个名字"更根本。
+</p>
+
+<h2>目标文件</h2>
+<p class="mono small">{{ secret_path }}</p>
+<p class="muted small">
+  这个文件不在 web 目录下。让模板把它的内容渲染出来就通关了 ——
+  那串 WELCOME-OPS- 开头的凭据会出现在「渲染结果」里。
+</p>
+
+<h2>沙箱的默认行为（值得知道）</h2>
+<p class="muted small">
+  Jinja2 自带的 <span class="mono">SandboxedEnvironment</span> 拦的是
+  <strong>所有以下划线开头的属性访问</strong> —— 那是从对象逃到 Python 内部的
+  唯一入口。所以在原生沙箱下，这些经典 payload 全部失效：
+</p>
+<pre class="payload">{{ '{{' }} ''.__class__.__mro__ {{ '}}' }}
+{{ '{{' }} lipsum.__globals__ {{ '}}' }}
+{{ '{{' }} ''|attr('__globals__') {{ '}}' }}
+{{ '{{' }} ''|map(attribute='__class__') {{ '}}' }}</pre>
+<p class="muted small">
+  这一题不是"Jinja 的沙箱有洞"，是<strong>这个应用把沙箱放宽了</strong> ——
+  这才是真实世界里更常见的情况。
+</p>
+{% endblock %}

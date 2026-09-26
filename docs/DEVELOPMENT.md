@@ -474,7 +474,7 @@ return {"": portal, "attacker": ctx.flask(__name__, mount="attacker")}
 
 ## 12. 照着现成的题写
 
-仓库里 24 道题都是按这份契约写的，可以直接拿来对照：
+仓库里 33 道题都是按这份契约写的，可以直接拿来对照：
 
 ```
 modules/sqli/login_bypass/            字符串拼接 SQL（含 sqlite + seed）
@@ -494,6 +494,15 @@ modules/upload/zip_slip/              手写解压循环 + 受保护文件的内
 modules/idor/admin_endpoint/          session 里的角色 + 前端隐藏的入口
 modules/path_traversal/encoding_filter/ 双重解码 + 应用自己写下载逻辑
 modules/command_injection/space_filter/ shell=True 起子进程 + check() 读应用自己写的日志
+modules/ssti/sandbox_escape/          继承 SandboxedEnvironment 并放宽（反面教材）
+modules/jwt/kid_injection/            手搓 JWT + 按 kid 从目录读密钥
+modules/deserialization/pickle_cookie/ 手搓 pickle 载荷 + 从磁盘状态推进度
+modules/xxe/svg_preview/              自己实现 EntityResolver（反面教材）
+modules/cors/credentials/             手写 CORS 头 + 双挂载点无关（单源）
+modules/open_redirect/login_next/     两条件式的"站内跳转"校验（反面教材）
+modules/host_header/password_reset/   "受信主机列表" + 自己记邮件箱
+modules/business_logic/price_tamper/  全部数值从表单来 + check() 从订单表推
+modules/info_leak/backup_files/       静态文件服务 + 故意的 dotfile 残留
 modules/race_condition/coupon_redeem/ 模块级内存状态 + 自己实现 reset()
 modules/jwt/alg_none/                 手搓 JWT（不引入额外依赖）
 ```

@@ -1,0 +1,71 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}文件浏览 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>内部工具导航站</h1>
+
+{% if admin %}
+  <div class="notice notice-ok">
+    已用泄露出来的口令登录管理员 —— <strong>这题通了。</strong>
+  </div>
+{% endif %}
+
+<h2>公开文件</h2>
+<ul class="cards">
+  {% for f in files %}
+  <li class="card">
+    <a class="card-title" href="{{ url_for('serve', name=f) }}">{{ f }}</a>
+  </li>
+  {% endfor %}
+</ul>
+<p class="muted small">
+  取文件的接口是 <span class="mono">/files/&lt;路径&gt;</span>。
+  上面这些只是「公开」的 —— <strong>真正要找的东西不会出现在这个列表里。</strong>
+</p>
+
+{% if blocked %}
+  <div class="notice notice-bad">
+    <span class="mono">{{ blocked }}</span> 越出了站点根目录，被拦下了。
+  </div>
+  <p class="muted small">
+    这一题特意把 <span class="mono">../</span> 拦掉了 —— 它跟路径穿越
+    <strong>不是一回事</strong>。这里的问题是根目录里本来就有不该有的东西。
+  </p>
+{% endif %}
+
+{% if result and result.get('login') %}
+  {% if result['ok'] %}
+    <div class="notice notice-ok">口令正确。</div>
+  {% else %}
+    <div class="notice notice-bad">口令不对。它就在某个文件里。</div>
+  {% endif %}
+{% elif result %}
+  <h2>{{ result['name'] }}</h2>
+  {% if result.get('leaked') %}
+    <div class="notice notice-ok">
+      这个文件<strong>本来就不该在 web 目录里</strong> —— 这题的第一个目标达成了。
+    </div>
+  {% endif %}
+  <pre class="payload">{{ result['body'] }}</pre>
+{% endif %}
+
+<h2>管理员登录</h2>
+<form method="post" action="{{ url_for('admin_login') }}">
+  <p>
+    <input type="text" name="password" value="" style="min-width:320px"
+           placeholder="管理员口令">
+    <button type="submit" class="btn">登录</button>
+  </p>
+</form>
+
+<h2>这个洞跟路径穿越有什么区别</h2>
+<p class="muted small">
+  路径穿越是「<strong>绕过</strong>根目录限制」；这一题是
+  「<strong>根目录里本来就不该有那些文件</strong>」。
+  没有校验可以绕，直接请求就行。
+</p>
+<p class="muted small">
+  所以它属于「扫一遍就能发现」的漏洞 —— 也最容易被漏掉：
+  开发觉得「这个文件又不对外」，但 web 服务器是为<strong>整个目录</strong>服务的。
+</p>
+{% endblock %}

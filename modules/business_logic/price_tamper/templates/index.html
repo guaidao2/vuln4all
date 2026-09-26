@@ -1,0 +1,88 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}积分商城 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>积分商城</h1>
+
+<h2>商品</h2>
+<table class="findings">
+  <thead><tr><th>商品</th><th>标价</th><th>下单</th></tr></thead>
+  <tbody>
+    {% for c in catalog %}
+    <tr>
+      <td>{{ c['name'] }}</td>
+      <td class="mono">￥{{ c['price'] }}</td>
+      <td>
+        <form method="post" action="{{ url_for('order') }}">
+          <input type="hidden" name="item" value="{{ c['key'] }}">
+          <input type="hidden" name="price" value="{{ c['price'] }}">
+          <input type="number" name="qty" value="1" style="width:80px">
+          <button type="submit" class="btn">下单</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<p class="muted small">
+  上面每个「下单」按钮的表单里都有一个
+  <span class="mono">&lt;input type="hidden" name="price"&gt;</span>。
+  它为什么要存在？服务端还需要客户端告诉它价格吗？
+</p>
+
+{% if error %}
+  <div class="notice notice-bad">{{ error }}</div>
+{% endif %}
+
+{% if last %}
+  <h2>这一单</h2>
+  <table class="findings">
+    <tbody>
+      <tr><th>商品</th><td>{{ last['name'] }}</td></tr>
+      <tr><th>标价</th><td class="mono">￥{{ last['list_price'] }}</td></tr>
+      <tr><th>服务端采用的单价</th><td class="mono">￥{{ last['unit_price'] }}</td></tr>
+      <tr><th>数量</th><td class="mono">{{ last['qty'] }}</td></tr>
+      <tr><th>实付</th>
+        <td class="mono {% if last['paid'] < last['list_price'] %}err{% endif %}">
+          ￥{{ last['paid'] }}
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="muted small">
+    对比「标价」和「服务端采用的单价」这两行 —— 它们不一样的时候，
+    就说明服务端信了客户端给的价格。
+  </p>
+{% endif %}
+
+<h2>订单（共 {{ orders | length }} 单）</h2>
+{% if orders %}
+  <table class="findings">
+    <thead><tr><th>商品</th><th>标价</th><th>数量</th><th>实付</th><th>时间</th></tr></thead>
+    <tbody>
+      {% for o in orders %}
+      <tr>
+        <td>{{ o['item_name'] }}</td>
+        <td class="mono">￥{{ '%.2f' % o['unit_price'] }}</td>
+        <td class="mono">{{ o['qty'] }}</td>
+        <td class="mono">￥{{ '%.2f' % o['paid'] }}</td>
+        <td class="muted small">{{ o['created'] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <p class="muted">还没有订单。</p>
+{% endif %}
+
+<form method="post" action="{{ url_for('clear') }}" style="margin-top:14px">
+  <button type="submit" class="btn btn-ghost">清空订单</button>
+</form>
+
+<h2>这一类漏洞怎么找</h2>
+<p class="muted small">
+  不看「技术」，看<strong>业务流程</strong>。问：这个流程里哪些数值决定了钱？
+  那些数值是服务端算的，还是客户端传的？
+</p>
+{% endblock %}

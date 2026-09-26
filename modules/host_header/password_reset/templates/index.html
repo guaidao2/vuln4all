@@ -1,0 +1,85 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}忘记密码 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>忘记密码</h1>
+<p class="muted small">
+  提交邮箱，服务端会生成一条重置链接发给你。
+  这个靶场没有真邮件服务，所以"发出的邮件"直接显示在下面。
+</p>
+
+<form method="post" action="{{ url_for('forgot') }}">
+  <p>
+    <input type="text" name="email" value="alice@corp.example" style="min-width:300px">
+    <button type="submit" class="btn">发送重置链接</button>
+  </p>
+</form>
+
+{% if error %}
+  <div class="notice notice-bad">{{ error }}</div>
+{% endif %}
+
+{% if last %}
+  {% if last['host'] != real_host %}
+    <div class="notice notice-ok">
+      服务端<strong>信了</strong>请求里给的域名，生成了一条指向
+      <span class="mono">{{ last['host'] }}</span> 的重置链接 ——
+      <strong>这题通了。</strong>
+    </div>
+  {% else %}
+    <p class="muted small">生成了一条正常的重置链接。</p>
+  {% endif %}
+  <h2>这次发出的邮件</h2>
+  <table class="findings">
+    <tbody>
+      <tr><th>请求里的域名</th><td class="mono">{{ last['host'] }}</td></tr>
+      <tr><th>本站真实地址</th><td class="mono">{{ real_host }}</td></tr>
+      <tr><th>重置链接</th><td class="mono">{{ last['link'] }}</td></tr>
+    </tbody>
+  </table>
+{% endif %}
+
+<h2>白名单规则</h2>
+<pre class="payload">{% for a in allowed %}host 里含有 "{{ a }}" 就放行
+{% endfor %}</pre>
+<p class="muted small">
+  域名是从右往左读的。所以问一句：
+  <strong>有没有办法让一个"别人的域名"里出现自家域名？</strong>
+</p>
+
+<h2>域名是用哪个头决定的</h2>
+<pre class="payload">优先用：X-Forwarded-Host
+退回用：Host</pre>
+<p class="muted small">
+  开发的想法是：这服务跑在反向代理后面，代理给的更"真实"。
+  但这两个头<strong>都是客户端能设的</strong> —— 你可以自己试：
+</p>
+<pre class="payload">curl -i -X POST -H 'Host: {{ evil_host }}' \
+     --data-urlencode 'email=alice@corp.example' \
+     '{{ url_for('forgot') }}'
+
+curl -i -X POST -H 'X-Forwarded-Host: {{ evil_host }}' \
+     --data-urlencode 'email=alice@corp.example' \
+     '{{ url_for('forgot') }}'</pre>
+
+<h2>邮件箱（共 {{ mail | length }} 封）</h2>
+{% if mail %}
+  <ul class="cards">
+    {% for m in mail %}
+    <li class="card">
+      <div class="card-meta">
+        <span class="mono">发给 {{ m['to_addr'] }}</span>
+        <span class="muted small">{{ m['sent_at'] }}</span>
+      </div>
+      <p class="mono">{{ m['body'] }}</p>
+    </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <p class="muted">还没发过。</p>
+{% endif %}
+
+<form method="post" action="{{ url_for('clear') }}" style="margin-top:14px">
+  <button type="submit" class="btn btn-ghost">清空邮件箱</button>
+</form>
+{% endblock %}

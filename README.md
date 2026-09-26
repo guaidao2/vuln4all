@@ -242,6 +242,7 @@ vuln4all/
 │   ├── path_traversal/file_download/  入门
 │   ├── path_traversal/encoding_filter/ 困难（编码过滤绕过）
 │   ├── ssti/jinja2_profile/           入门（Python 独有）
+│   ├── ssti/sandbox_escape/           困难（自放宽的沙箱）
 │   ├── csrf/password_change/          进阶
 │   ├── csrf/json_api/                 进阶（双挂载点）
 │   ├── upload/avatar/                 进阶
@@ -250,9 +251,17 @@ vuln4all/
 │   ├── command_injection/space_filter/ 困难（分隔符过滤绕过）
 │   ├── ssrf/url_preview/              进阶（双挂载点）
 │   ├── ssrf/ip_format_filter/         困难（IP 写法绕过，双挂载点）
+│   ├── jwt/alg_none/                  困难
+│   ├── jwt/kid_injection/             困难（kid 当路径用）
+│   ├── deserialization/pickle_cookie/ 困难（Python 独有）
+│   ├── xxe/svg_preview/               困难
+│   ├── cors/credentials/              进阶
+│   ├── open_redirect/login_next/      入门
+│   ├── host_header/password_reset/    进阶
+│   ├── business_logic/price_tamper/   入门
+│   ├── info_leak/backup_files/        入门
 │   ├── flask_session/forged_cookie/   进阶（Python 独有）
-│   ├── race_condition/coupon_redeem/  困难
-│   └── jwt/alg_none/                  困难
+│   └── race_condition/coupon_redeem/  困难
 ├── tools/                       # 辅助脚本
 │   ├── deploy.py                #   把一个项目副本同步到另一台机器
 │   └── verify.sh                #   端到端验证：起靶场 + 逐题打一遍
@@ -283,6 +292,7 @@ vuln4all/
 | 入门 | `path_traversal/file_download` | 企业网盘 | `os.path.join` 被 `../` 和绝对路径顶穿 |
 | 困难 | `path_traversal/encoding_filter` | 企业网盘 | 过滤器和解码层没对齐；双重编码 + 只编码敏感词里一个字符 |
 | 入门 | `ssti/jinja2_profile` | 团队协作 SaaS | 用户输入被当 Jinja2 模板渲染 |
+| 困难 | `ssti/sandbox_escape` | 欢迎语设置 | 自己放宽的沙箱名单漏了 `__getattribute__` |
 | 进阶 | `csrf/password_change` | 个人中心 + 攻击者站 | 改密码接口不看请求来源 |
 | 进阶 | `csrf/json_api` | 个人中心 + 攻击者站 | 接口不看 Content-Type 就解析 JSON，`text/plain` 表单能伪造 |
 | 进阶 | `upload/avatar` | 头像上传 | 后缀黑名单大小写敏感 + 信客户端 Content-Type |
@@ -291,6 +301,14 @@ vuln4all/
 | 困难 | `command_injection/space_filter` | 运维诊断面板 | 分隔符黑名单漏了换行；空格用 `${IFS}` 替掉 |
 | 进阶 | `ssrf/url_preview` | 聊天链接预览 | 白名单只做子串匹配，`@` 骗过校验 |
 | 困难 | `ssrf/ip_format_filter` | 聊天链接预览 | 黑名单列 IP 字面量；换一种写法（十进制/十六进制/八进制）就过了 |
+| 困难 | `jwt/kid_injection` | 开放 API 平台 | 验签密钥由 token 自己的 `kid` 决定，`kid=/dev/null` 空密钥 |
+| 困难 | `deserialization/pickle_cookie` | 个人中心偏好 | 偏好序列化进 Cookie，`pickle.loads` 执行任意代码 |
+| 困难 | `xxe/svg_preview` | 图标库 | 外部实体被显式打开；`<!ENTITY ... SYSTEM "file://...">` 读文件 |
+| 进阶 | `cors/credentials` | 合作方接口 | 反射任意 Origin + 允许凭据；白名单子串匹配 |
+| 入门 | `open_redirect/login_next` | 统一登录 | `//evil.example` 与域名子串骗过「站内跳转」校验 |
+| 进阶 | `host_header/password_reset` | 忘记密码 | 重置链接的域名来自请求头；受信列表子串匹配 |
+| 入门 | `business_logic/price_tamper` | 积分商城 | 单价和数量都由客户端给，服务端不校验 |
+| 入门 | `info_leak/backup_files` | 静态站点 | 根目录里躺着 `.env` / `.git` / 备份，直接请求就行 |
 | 进阶 | `flask_session/forged_cookie` | 订阅制 SaaS 后台 | 弱密钥硬编码，session 可以自己签 |
 | 困难 | `race_condition/coupon_redeem` | 限时优惠券 | check-then-act 不原子，并发领取 |
 | 困难 | `jwt/alg_none` | 开放 API 平台 | 验签算法从 token 自己声明的 `alg` 里读 |

@@ -31,7 +31,7 @@ curl '{{ base }}/api/admin/keys' \
   -H 'Authorization: Bearer {{ token }}'</pre>
   <p class="muted small">
     目标：让 <code>/api/admin/keys</code> 返回东西。它要求 <code>role=admin</code> ——
-    而你的账号里根本没有这个角色。所以你得想办法让服务端**相信**你有。
+    而你的账号里根本没有这个角色。所以你得想办法让服务端<strong>相信</strong>你有。
   </p>
 {% endif %}
 {% endblock %}

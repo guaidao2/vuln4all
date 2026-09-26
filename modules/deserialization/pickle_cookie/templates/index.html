@@ -1,0 +1,71 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}显示偏好 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>个人中心 · 显示偏好</h1>
+
+{% if message %}<p class="ok">{{ message }}</p>{% endif %}
+
+<form method="post" action="{{ url_for('index') }}">
+  <p><label>用户名<br><input type="text" name="user" value="alice"></label></p>
+  <p><label>密码<br><input type="text" name="password" value="alice123"></label></p>
+  <p>
+    <label>偏好设置（服务端会把它序列化进 Cookie）<br>
+      <input type="text" name="prefs" value="" style="min-width:480px"
+             placeholder="留空就用默认值；也可以直接填一段 base64——服务端会 pickle.loads 它">
+    </label>
+  </p>
+  <p><button type="submit" class="btn">保存</button></p>
+</form>
+
+<h2>当前的偏好</h2>
+<table class="findings">
+  <tbody>
+    {% for k, v in prefs.items() %}
+    <tr><th class="mono">{{ k }}</th><td>{{ v }}</td></tr>
+    {% endfor %}
+    <tr><th>Cookie 长度</th><td class="mono">{{ blob_len }} 字符</td></tr>
+  </tbody>
+</table>
+
+{% if load_error %}
+  <div class="notice notice-bad">
+    <strong>反序列化这一步出错了：</strong><br>
+    <span class="mono">{{ load_error }}</span>
+    <p class="muted small">
+      看这个报错 —— 它说明服务端确实在解析你给的那段字节。
+    </p>
+  </div>
+{% elif blob %}
+  <p class="muted small">
+    这段 Cookie 被成功解出来了。它用的是 base64 + <strong>pickle</strong>。
+  </p>
+{% endif %}
+
+<h2>Cookie 原文</h2>
+<pre class="payload">{{ blob or '（还没有）' }}</pre>
+
+{% if proof %}
+  <div class="notice notice-ok">
+    服务端在应用数据目录里写下了 proof.txt —— <strong>这题通了。</strong>
+  </div>
+  <h2>proof.txt 的内容</h2>
+  <pre class="payload">{{ proof }}</pre>
+{% endif %}
+
+<h2>应用数据目录</h2>
+<p class="mono small">{{ data_dir }}</p>
+<p class="muted small">
+  判定凭据是 <span class="mono">{{ proof_path }}</span> ——
+  让服务端执行一条命令，把你想证明的东西写进去。这个文件不在 web 根目录下，
+  正常访问拿不到。
+</p>
+
+<form method="post" action="{{ url_for('clear') }}" style="margin-top:14px">
+  <button type="submit" class="btn btn-ghost">清掉偏好和证明文件</button>
+</form>
+
+<p class="muted small">
+  注意：提交框和 Cookie 是等价的入口 —— 直接改 Cookie 也一样。
+</p>
+{% endblock %}

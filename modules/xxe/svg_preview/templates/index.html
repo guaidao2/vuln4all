@@ -1,0 +1,72 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}SVG 图标上传 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>图标库 · 上传 SVG</h1>
+<p class="muted small">
+  传一个 SVG，服务端会把它的 <span class="mono">&lt;title&gt;</span> 和
+  <span class="mono">&lt;author&gt;</span> 读出来存进图标库。
+</p>
+
+<form method="post" action="{{ url_for('index') }}" enctype="multipart/form-data">
+  <p><input type="file" name="icon" accept=".svg,image/svg+xml"></p>
+  <p><button type="submit" class="btn">上传并提取</button></p>
+</form>
+
+{% if error %}
+  <div class="notice notice-bad">解析出错：<span class="mono">{{ error }}</span></div>
+{% endif %}
+
+{% if result %}
+  <h2>提取结果</h2>
+  <table class="findings">
+    <tbody>
+      <tr><th>文件名</th><td class="mono">{{ result['name'] }}</td></tr>
+      <tr><th>标题</th><td class="mono">{{ result['title'] or '（空）' }}</td></tr>
+      <tr><th>作者</th><td class="mono">{{ result['author'] or '（空）' }}</td></tr>
+    </tbody>
+  </table>
+  {% if result['missing'] %}
+    <p class="muted small">
+      两个字段都是空的 —— 检查一下你的 SVG 里有没有 <span class="mono">&lt;title&gt;</span>。
+    </p>
+  {% endif %}
+  <p class="muted small">
+    <strong>注意「标题」那一栏</strong>：它显示的是服务端解析出来的东西。
+    如果实体被展开了，展开的内容就会出现在这里。
+  </p>
+{% endif %}
+
+<h2>图标库</h2>
+{% if icons %}
+  <table class="findings">
+    <thead><tr><th>文件名</th><th>标题</th><th>作者</th></tr></thead>
+    <tbody>
+      {% for i in icons %}
+      <tr>
+        <td class="mono">{{ i['name'] }}</td>
+        <td class="mono">{{ i['title'] }}</td>
+        <td class="mono">{{ i['author'] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <p class="muted">还是空的。</p>
+{% endif %}
+
+<h2>目标文件</h2>
+<p class="mono small">{{ secret_path }}</p>
+<p class="muted small">
+  这个文件不在 web 目录下，正常访问拿不到 —— 只能靠解析器去读。
+  里面那串 ICON-OPS- 开头的凭据出现在标题里就通关了。
+</p>
+
+<form method="post" action="{{ url_for('clear') }}" style="margin-top:14px">
+  <button type="submit" class="btn btn-ghost">清空图标库</button>
+</form>
+
+<p class="muted small">
+  服务端用的解析器是 Python 的 <span class="mono">xml.sax</span>。
+</p>
+{% endblock %}

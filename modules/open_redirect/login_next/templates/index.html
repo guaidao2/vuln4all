@@ -1,0 +1,60 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}登录 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>统一登录</h1>
+
+{% if result and result.get('home') %}
+  <div class="notice notice-ok">
+    已经跳回来了。当前登录：<strong>{{ result.get('user') or '（未登录）' }}</strong>
+  </div>
+{% endif %}
+
+{% if blocked %}
+  <div class="notice notice-bad">
+    这个跳转目标被拦下了（判定为站外）：<br>
+    <span class="mono">{{ blocked }}</span>
+  </div>
+{% endif %}
+
+{% if result and result.get('error') %}
+  <div class="notice notice-bad">{{ result['error'] }}</div>
+{% endif %}
+
+<form method="post" action="{{ url_for('login') }}">
+  <p><label>用户名<br><input type="text" name="user" value="alice"></label></p>
+  <p><label>密码<br><input type="text" name="password" value="alice123"></label></p>
+  <p>
+    <label>登录成功后跳回哪里<br>
+      <input type="text" name="next" value="{{ next_url or '/home' }}" style="min-width:420px">
+    </label>
+  </p>
+  <p><button type="submit" class="btn">登录</button></p>
+</form>
+
+<h2>服务端怎么判断这个目标是站内还是站外</h2>
+<p class="muted small">两条规则：</p>
+<pre class="payload">一、以 / 开头的 → 算站内相对路径
+二、提到了 {{ own_host }} 的 → 算站内</pre>
+<p class="muted small">
+  两条规则都在「拦截」那一侧 —— 所以要看的是：有没有哪种写法能
+  <strong>同时满足其中一条、又不是站内</strong>。
+</p>
+
+<h2>看 Location 头</h2>
+<pre class="payload">curl -i -X POST -d 'user=alice&password=alice123' \
+     --data-urlencode 'next=&lt;你想试的写法&gt;' \
+     '{{ url_for('login') }}'</pre>
+<p class="muted small">
+  登录成功后响应是一个 302，真正的跳转目标在 <span class="mono">Location</span> 里。
+  这一题就靠它判定。
+</p>
+
+<h2>这个洞为什么值得单独学</h2>
+<p class="muted small">
+  开放重定向本身不直接泄露数据，但它是<strong>钓鱼的放大器</strong>：
+  受害者收到的是自家域名下的链接（`https://自家域名/login?next=//evil.example`），
+  点进去登录完之后落到攻击者的站点上。而且它经常和 OAuth / SSO 的
+  `redirect_uri` 校验一起出现 —— 那才是真正能拿走 token 的场景。
+</p>
+{% endblock %}
