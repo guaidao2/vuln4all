@@ -201,10 +201,10 @@ def _workspace_fingerprint(entry) -> tuple:
 def _check_placeholders(entry) -> List[Finding]:
     """抓没改完的骨架。
 
-    `vuln4all new` 生成的 info 里全是 TODO 占位文本。忘了改的话，题目会带着
+    `vuln4all new` 生成的 info 里全是 TODO 占位文本。忘改的话，题目会带着
     "TODO 一句话说清漏洞在哪" 出现在清单页上 —— 这个检查直接把它指出来。
 
-    比在文档里写一句"记得改"有用：它不依赖任何人记得，也不依赖任何人读文档。
+    这类检查的价值在于它是**执行出来的**，而不是约定出来的。
     """
     leftovers = []
     for key, value in entry.info.items():
