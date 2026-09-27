@@ -1,0 +1,108 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}工单查询 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>工单查询</h1>
+
+<form method="post" action="{{ url_for('index') }}">
+  <p>
+    <input type="text" name="ticket_no" value="{{ ticket_no }}" style="min-width:420px"
+           placeholder="例如 T-1001">
+    <button type="submit" class="btn">查询</button>
+  </p>
+</form>
+
+{% if elapsed is not none %}
+  <h2>查询完成</h2>
+  <table class="findings">
+    <tbody>
+      <tr><th>本次耗时</th><td class="mono">{{ '%.3f' % elapsed }} 秒</td></tr>
+      {% if timed_out %}
+      <tr><th>说明</th>
+        <td class="err">语句跑到了靶场的上限（{{ max_seconds }} 秒）被中止了</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+  <p class="muted small">
+    页面上永远只有这一句"查询完成" —— 不管你输入什么、查到没查到、
+    语句有没有报错，返回的 HTML 完全一样。
+  </p>
+  <p class="muted small">
+    这一题是为了教学方便才把耗时直接打给你。真实环境里没人会告诉你 ——
+    你得自己用 <code>curl -w '%{time_total}'</code> 或者脚本量。
+  </p>
+{% endif %}
+
+<h2>用时间来读数据</h2>
+<p class="muted small">
+  目标密码：<strong>{{ length }}</strong> 位，字符集是
+  <strong>小写字母 + 数字</strong>（{{ alphabet_size }} 个）。
+</p>
+
+<form method="post" action="{{ url_for('index') }}">
+  <p>
+    <label>把你猜出来的密码提交上来：<br>
+      <input type="text" name="guess" value="" placeholder="{{ length }} 位">
+    </label>
+  </p>
+  <p><button type="submit" class="btn">提交</button></p>
+</form>
+
+{% if feedback %}
+  {% if feedback[0] == 'ok' %}
+    <div class="notice notice-ok">{{ feedback[1] }}<strong>这题通了。</strong></div>
+  {% else %}
+    <div class="notice notice-bad">{{ feedback[1] }}再回去多问几次。</div>
+  {% endif %}
+{% endif %}
+
+<h2>这一题跟 <span class="mono">sqli/time_blind</span> 的区别</h2>
+<table class="findings">
+  <tbody>
+    <tr>
+      <th><span class="mono">time_blind</span></th>
+      <td>服务端<strong>额外注册</strong>了一个 <span class="mono">sleep()</span> 函数，
+          于是 payload 跟 MySQL 上写的一样</td>
+    </tr>
+    <tr>
+      <th>这一题</th>
+      <td><strong>没有</strong> —— 数据库本身就没有 <span class="mono">SLEEP()</span>，
+          而且真实环境里 sleep 类函数经常不可用</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>那延迟从哪来</h2>
+<p class="muted small">
+  <strong>算点重的东西。</strong>延迟不一定要来自"睡"，也可以来自"算"。
+</p>
+<p class="muted small">
+  想想"慢"还能从哪来：算很多次（循环）、分配很大一块内存、做很多次 IO。
+  SQLite 里分别对应什么写法？先自己试着让这条查询慢下来。
+</p>
+
+<h2>选哪种原语</h2>
+<table class="findings">
+  <tbody>
+    <tr><th>循环（递归 CTE）</th><td>吃 CPU —— <strong>适合</strong>，时间稳定、内存不涨</td></tr>
+    <tr><th><span class="mono">randomblob(N)</span> 大内存</th><td>吃内存 —— 不适合，换来同样的时间要多花几十倍内存</td></tr>
+    <tr><th>笛卡尔积自连接</th><td>吃 CPU，但行数不好精确控制</td></tr>
+    <tr><th>大表的 <span class="mono">COUNT(*)</span></th><td>依赖表里有多少行，不稳定</td></tr>
+  </tbody>
+</table>
+<p class="muted small">
+  标准：<strong>耗时可控、内存和 IO 稳定、重复调用不会把服务打坏。</strong>
+</p>
+
+<h2>靶场的上限</h2>
+<p class="muted small">
+  靶场给单条语句加了 <strong>{{ max_seconds }} 秒</strong>的上限。
+  这不是修复，是为了不让一个请求把 worker 占住几分钟 ——
+  递归 CTE 的迭代次数是由你的 payload 决定的。
+</p>
+<p class="muted small">
+  真实目标<strong>没有</strong>这个保护。所以现实里要小心：一条构造不当的
+  payload 可能直接把数据库拖垮。造延迟的时候先用小数字校准，
+  确认量级之后再往上调。
+</p>
+{% endblock %}

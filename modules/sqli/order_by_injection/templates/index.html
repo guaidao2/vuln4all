@@ -1,0 +1,84 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}商品列表 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>商品列表</h1>
+
+<form method="post" action="{{ url_for('list_products') }}">
+  <p>
+    <label>按什么排<br>
+      <select name="sort">
+        {% for s in public_sorts %}
+        <option value="{{ s }}" {% if sort == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="btn">排序</button>
+  </p>
+</form>
+
+{% if blocked %}
+  <div class="notice notice-bad">
+    <span class="mono">{{ blocked }}</span> 命中了黑名单，不让排。
+  </div>
+{% endif %}
+{% if error and not blocked %}
+  <div class="notice notice-bad"><span class="mono">{{ error }}</span></div>
+{% endif %}
+
+{% if rows %}
+  <h2>共 {{ rows | length }} 个商品</h2>
+  <table class="findings">
+    <thead><tr><th>编号</th><th>名称</th><th>价格</th></tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="mono">{{ r['id'] }}</td>
+        <td>{{ r['name'] }}</td>
+        <td class="mono">￥{{ '%.2f' % r['price'] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted small">
+    注意：页面上<strong>没有</strong>显示「内部评级」这一列。
+    但你看到的<strong>行序</strong>是从哪来的？
+  </p>
+{% endif %}
+
+{% if raw_sql %}
+  <h2>服务端实际执行的语句</h2>
+  <pre class="payload">{{ raw_sql }}</pre>
+  <p class="muted small">
+    排在 <span class="mono">ORDER BY</span> 后面的是<strong>标识符</strong>，
+    不是值 —— 所以它<strong>没法参数化</strong>（<span class="mono">ORDER BY ?</span>
+    在 SQL 里是无效的）。
+  </p>
+{% endif %}
+
+<h2>黑名单里有哪些词</h2>
+<p class="mono small">{{ blocked_words | join('、') }}</p>
+<p class="muted small">
+  想一想它是怎么比较的：<strong>列名是唯一的写法吗？</strong>
+</p>
+
+<h2>这个位置为什么特别</h2>
+<p class="muted small">
+  一、<strong>UNION 用不了</strong>：UNION 要求前后列数一致，
+  而这里的列是由原查询定的，你没有地方接一张新表。
+</p>
+<p class="muted small">
+  二、<strong>它照样能读数据</strong>：因为<strong>排序结果本身就是输出</strong>。
+  服务端不告诉你某个值是多少，但告诉你"谁比谁大" ——
+  而行序是那些值的一个函数。
+</p>
+<p class="muted small">
+  三、<strong>参数化管不到它</strong>：所以这里只能用白名单。
+  黑名单在这一层几乎必然失败（列名能换成列号、大小写、或者一个表达式）。
+</p>
+<p class="muted small">
+  试试按<strong>列号</strong>排（<span class="mono">1</span>、
+  <span class="mono">2</span>、<span class="mono">3</span>、……），
+  顺便注意列号超出范围时报什么错。
+</p>
+{% endblock %}

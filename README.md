@@ -230,9 +230,15 @@ vuln4all/
 │   └── static/style.css         #   设计系统
 ├── modules/                     # ← 题目都在这儿，一个目录一道题
 │   ├── sqli/login_bypass/             入门
+│   ├── sqli/numeric_injection/        入门（数字型，不用引号）
 │   ├── sqli/union_query/              进阶
-│   ├── sqli/time_blind/               困难
 │   ├── sqli/keyword_filter/           困难（关键词过滤绕过）
+│   ├── sqli/order_by_injection/       进阶（ORDER BY 处）
+│   ├── sqli/identifier_injection/     进阶（表名/列名处）
+│   ├── sqli/time_blind/               困难
+│   ├── sqli/boolean_blind/            困难（布尔盲注）
+│   ├── sqli/sleepless_time_blind/     困难（数据库没有 SLEEP）
+│   ├── sqli/second_order/             困难（二次注入）
 │   ├── xss/reflect_search/            入门
 │   ├── xss/stored_guestbook/          入门
 │   ├── xss/dom_based/                 进阶
@@ -291,6 +297,12 @@ vuln4all/
 | 进阶 | `sqli/union_query` | 商品搜索 | 能 UNION，但页面不给报错，得自己数列数找显示位 |
 | 困难 | `sqli/time_blind` | 工号查询 | 页面永远一样，只剩响应时间这一个信号 |
 | 困难 | `sqli/keyword_filter` | 员工名录 | 黑名单按字面量写；`UNION  SELECT` 双空格就过了 |
+| 入门 | `sqli/numeric_injection` | 物流单号查询 | 数字型注入不需要引号 ——「转义引号」在这里无效 |
+| 进阶 | `sqli/order_by_injection` | 商品列表排序 | `ORDER BY` 处 UNION 用不了；排序结果本身就是信道 |
+| 进阶 | `sqli/identifier_injection` | 运营数据看板 | 参数化管不到标识符；schema 限定和子查询绕过黑名单 |
+| 困难 | `sqli/boolean_blind` | 优惠券查询 | 只剩一个布尔值；二分/`hex()`/`group_concat` 提速 |
+| 困难 | `sqli/sleepless_time_blind` | 工单查询 | 没有 `SLEEP()`，用递归 CTE 当 CPU 燃烧器造延迟 |
+| 困难 | `sqli/second_order` | 个人中心改密码 | 注入点是从库里读出来的用户名；参数化只做了一半 |
 | 入门 | `xss/reflect_search` | 站内搜索 | `\|safe` 关掉了 Jinja 自动转义 |
 | 入门 | `xss/stored_guestbook` | 产品留言板 | payload 落库，之后每次打开页面都触发 |
 | 进阶 | `xss/dom_based` | 欢迎页 | 前端 JS 拿 `location` 拼 `innerHTML`，服务端完全不知情 |

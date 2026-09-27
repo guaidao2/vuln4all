@@ -1,0 +1,76 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}优惠券查询 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>优惠券查询</h1>
+<p class="muted small">
+  输入券码，看它有没有效。
+</p>
+
+<form method="post" action="{{ url_for('check_code') }}">
+  <p>
+    <input type="text" name="code" value="{{ typed }}" style="min-width:420px"
+           placeholder="比如 WELCOME10">
+    <button type="submit" class="btn">查询</button>
+  </p>
+</form>
+
+{% if valid is not none %}
+  {% if valid %}
+    <div class="notice notice-ok"><strong>这个券有效。</strong></div>
+  {% else %}
+    <div class="notice notice-bad"><strong>无效的券码。</strong></div>
+  {% endif %}
+{% endif %}
+
+<h2>用真假来读数据</h2>
+<p class="muted small">
+  目标密码：<strong>{{ length }}</strong> 位，字符集是
+  <strong>小写字母 + 数字</strong>（{{ alphabet_size }} 个）。
+</p>
+
+<form method="post" action="{{ url_for('check_code') }}">
+  <p>
+    <label>把你猜出来的密码提交上来：<br>
+      <input type="text" name="guess" value="" placeholder="{{ length }} 位">
+    </label>
+  </p>
+  <p><button type="submit" class="btn">提交</button></p>
+</form>
+
+{% if feedback %}
+  {% if feedback[0] == 'ok' %}
+    <div class="notice notice-ok">{{ feedback[1] }}<strong>这题通了。</strong></div>
+  {% else %}
+    <div class="notice notice-bad">{{ feedback[1] }}再回去多问几次。</div>
+  {% endif %}
+{% endif %}
+
+<h2>这个接口把三个信号都堵上了</h2>
+<table class="findings">
+  <tbody>
+    <tr><th>数据回显</th><td>没有 —— 只回"有效 / 无效"这一句话</td></tr>
+    <tr><th>报错回显</th><td>没有 —— 出错了也回同一句话</td></tr>
+    <tr><th>时间信号</th><td>没有 —— 语句是毫秒级的，真假分不出来</td></tr>
+    <tr><th class="ok">剩下的</th><td><strong>一个布尔值</strong></td></tr>
+  </tbody>
+</table>
+<p class="muted small">
+  盲注里最常见的就是这一种（比时间盲注常见得多）。
+  真实系统里"接口只返回成功/失败"是很普遍的设计 ——
+  而只要真假可观测，数据就出得来。
+</p>
+
+<h2>想一想效率</h2>
+<table class="findings">
+  <tbody>
+    <tr><th>逐位猜（字符集 36）</th><td>一位 36 次请求</td></tr>
+    <tr><th>二分（用 <span class="mono">&gt;</span>）</th><td>一位 6 次请求</td></tr>
+    <tr><th>换成 <span class="mono">hex()</span>（字符集 16）</th><td>一位 4 次请求</td></tr>
+    <tr><th><span class="mono">group_concat()</span></th><td>一次拖一整列</td></tr>
+  </tbody>
+</table>
+<p class="muted small">
+  把 6 位密码从 216 次压到 24 次，差的不是"能不能打通"，是"多久能打通"。
+</p>
+{% endblock %}

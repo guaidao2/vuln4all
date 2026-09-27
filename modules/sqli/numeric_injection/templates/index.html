@@ -1,0 +1,93 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}物流查询 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>物流单号查询</h1>
+
+{% if user %}
+  <p class="ok">已登录：<strong>{{ user }}</strong>（只能查自己的单）</p>
+{% else %}
+  <p class="muted">
+    先登录才能查单。<strong>归属过滤是写在 SQL 里的</strong> ——
+    所以直接猜别人的单号是猜不到的。
+  </p>
+  <form method="post" action="{{ url_for('login') }}">
+    <p><label>用户名<br><input type="text" name="user" value="alice"></label></p>
+    <p><label>密码<br><input type="text" name="password" value="alice123"></label></p>
+    <p><button type="submit" class="btn">登录</button></p>
+  </form>
+{% endif %}
+
+<h2>查单</h2>
+<form method="post" action="{{ url_for('do_query') }}">
+  <p>
+    <label>单号<br>
+      <input type="text" name="order_id" value="{{ typed }}" style="min-width:260px"
+             placeholder="比如 1">
+    </label>
+    <button type="submit" class="btn">查询</button>
+  </p>
+</form>
+
+{% if note %}<p class="ok">{{ note }}</p>{% endif %}
+{% if error %}
+  <div class="notice notice-bad">
+    <span class="mono">{{ error }}</span>
+  </div>
+{% endif %}
+
+{% if rows %}
+  <h2>查到 {{ rows | length }} 条</h2>
+  <table class="findings">
+    <thead><tr><th>单号</th><th>归属</th><th>商品</th><th>联系电话</th><th>状态</th></tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="mono">{{ r['id'] }}</td>
+        <td class="mono">{{ r['owner'] }}</td>
+        <td>{{ r['item'] }}</td>
+        <td class="mono">{{ r['phone'] }}</td>
+        <td>{{ r['status'] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if user and rows | length > 1 %}
+    <p class="muted small">
+      注意上面有没有<strong>不属于你</strong>的单。
+    </p>
+  {% endif %}
+{% elif typed %}
+  <p class="muted">没有查到。</p>
+{% endif %}
+
+{% if raw_sql %}
+  <h2>服务端实际执行的语句</h2>
+  <pre class="payload">{{ raw_sql }}</pre>
+  <p class="muted small">
+    看那个数字位置 —— <strong>它两边没有引号。</strong>
+    所以你的输入不是"被当成字符串比"，而是<strong>被当成算式算了</strong>。
+  </p>
+  <p class="muted small">
+    试一下：填 <span class="mono">1</span>、
+    <span class="mono">1-0</span>、<span class="mono">2-1</span>，
+    看结果是不是一样。一样就说明它是个算式。
+  </p>
+{% endif %}
+
+<h2>这一题要打破的错觉</h2>
+<p class="muted small">
+  前面几道 SQLi 都是<strong>字符型</strong>：输入被包在 <span class="mono">'...'</span> 里，
+  payload 得先用一个引号把字符串闭合掉。
+</p>
+<p class="muted small">
+  所以很多人形成一句话的结论：<strong>「把引号转义掉就安全了」。</strong>
+</p>
+<p class="muted small">
+  这一题的注入点是<strong>数字型</strong>的 —— 你的 payload 里<strong>一个引号都没有</strong>。
+  引号转义在这里一点用都派不上。
+  <br>
+  正确的做法是参数化 <span class="mono">?</span> —— 它管的是
+  "这是一个<strong>值</strong>，不是 SQL 语法"，跟"这个位置是数字还是字符串"没关系。
+</p>
+{% endblock %}

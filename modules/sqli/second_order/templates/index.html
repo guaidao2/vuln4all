@@ -1,0 +1,102 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}个人中心 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>个人中心</h1>
+
+{% if admin_pwned %}
+  <div class="notice notice-ok">
+    <strong>admin 的密码被改掉了</strong> —— 而且你从来没有登录过 admin 的账号。
+    <br>你现在可以用 <span class="mono">admin</span> + 你刚设的那个新密码登录试试。
+  </div>
+{% endif %}
+
+{% if user %}
+  <p class="ok">当前登录：<strong>{{ user }}</strong></p>
+{% else %}
+  <p class="muted">还没登录。</p>
+{% endif %}
+
+{% if note %}<p class="ok">{{ note }}</p>{% endif %}
+{% if error %}<div class="notice notice-bad">{{ error }}</div>{% endif %}
+
+<h2>注册</h2>
+<form method="post" action="{{ url_for('register') }}">
+  <p><label>用户名<br><input type="text" name="username" style="min-width:240px"></label></p>
+  <p><label>密码<br><input type="text" name="password" style="min-width:240px"></label></p>
+  <p><button type="submit" class="btn">注册</button></p>
+</form>
+
+<h2>登录</h2>
+<form method="post" action="{{ url_for('login') }}">
+  <p><label>用户名<br><input type="text" name="username" style="min-width:240px"></label></p>
+  <p><label>密码<br><input type="text" name="password" style="min-width:240px"></label></p>
+  <p><button type="submit" class="btn">登录</button></p>
+</form>
+
+<h2>改密码</h2>
+<form method="post" action="{{ url_for('change_password') }}">
+  <p><label>新密码<br><input type="text" name="new_password" style="min-width:240px"></label></p>
+  <p><button type="submit" class="btn">保存</button></p>
+</form>
+
+<h2>服务端刚刚拼出来的语句</h2>
+{% if log %}
+  <table class="findings">
+    <thead><tr><th>动作</th><th>语句</th></tr></thead>
+    <tbody>
+      {% for item in log %}
+      <tr>
+        <td class="mono">{{ item['step'] }}</td>
+        <td class="mono">{{ item['sql'] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted small">
+    <strong>对比这三行。</strong>注册和登录是参数化的（`?`）。<br>
+    而改密码那一句 —— <span class="mono">SET</span> 用了 <span class="mono">?</span>，
+    <span class="mono">WHERE</span> 里的用户名却是<strong>拼</strong>进去的。
+  </p>
+{% else %}
+  <p class="muted">还没有操作。先注册一个账号试试。</p>
+{% endif %}
+
+<form method="post" action="{{ url_for('clear_log') }}" style="margin-top:10px">
+  <button type="submit" class="btn btn-ghost">清空语句记录</button>
+</form>
+
+<h2>当前用户表</h2>
+<form method="post" action="{{ url_for('users') }}">
+  <p><button type="submit" class="btn">看一眼 users 表</button></p>
+</form>
+{% if rows %}
+  <table class="findings">
+    <thead><tr><th>id</th><th>用户名</th><th>角色</th></tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="mono">{{ r['id'] }}</td>
+        <td class="mono">{{ r['username'] }}</td>
+        <td class="mono">{{ r['role'] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endif %}
+
+<h2>关键问题</h2>
+<p class="muted small">
+  拼进 <span class="mono">WHERE</span> 的那个用户名，是<strong>从哪来的</strong>？
+  <br>
+  它的内容<strong>能由你控制吗</strong>？
+</p>
+<p class="muted small">
+  开发的想法是：「用户输入不可信，<strong>数据库里的数据可信</strong>」。<br>
+  这一题就是专门打这个错觉的 —— 那一行数据最初也是用户输入的。
+</p>
+<p class="muted small">
+  注册是参数化的，所以把什么东西当用户名存进去都<strong>没问题</strong>。
+  问题在它<strong>被取出来当可信数据用</strong>的那一刻。
+</p>
+{% endblock %}

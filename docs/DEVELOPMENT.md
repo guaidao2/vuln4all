@@ -487,13 +487,19 @@ return {"": portal, "attacker": ctx.flask(__name__, mount="attacker")}
 
 ## 12. 照着现成的题写
 
-仓库里 37 道题都是按这份契约写的，可以直接拿来对照：
+仓库里 43 道题都是按这份契约写的，可以直接拿来对照：
 
 ```
 modules/sqli/login_bypass/            字符串拼接 SQL（含 sqlite + seed）
 modules/sqli/union_query/             拼 SQL 但**不回显报错**（教"数不清列数时的排查"）
 modules/sqli/time_blind/              create_function 注册自定义 SQL 函数 + 只靠耗时判定
 modules/sqli/keyword_filter/          模块内自带一份正则规则表当过滤器（拦截式）
+modules/sqli/numeric_injection/       数字型注入（不需要引号）+ check() 从一次请求的结果推
+modules/sqli/order_by_injection/      ORDER BY 处注入 + 用「行序是否等于隐藏列序」判定
+modules/sqli/identifier_injection/    表名处的标识符注入 + check() 看导出内容里有没有哨兵
+modules/sqli/boolean_blind/           两个目标：建立布尔信道 + 提交猜出来的密码
+modules/sqli/sleepless_time_blind/    递归 CTE 造延迟 + set_progress_handler 兜上限
+modules/sqli/second_order/            三步流程跨请求（注册→登录→改密码）+ check() 看 admin 的密码
 modules/xss/reflect_search/           最简：一个模板 + 一个路由
 modules/xss/stored_guestbook/         写库再渲染（check() 直接从库推）
 modules/xss/dom_based/                服务端不输出 payload；页面自己回报命中

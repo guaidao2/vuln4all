@@ -1,0 +1,91 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}数据看板 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>运营数据看板</h1>
+<p class="muted small">
+  选一张表，把它的内容导出来看看。
+</p>
+
+<form method="post" action="{{ url_for('export') }}">
+  <p>
+    <label>表名<br>
+      <input type="text" name="table" value="{{ table }}" list="tables"
+             style="min-width:260px">
+    </label>
+    <datalist id="tables">
+      {% for t in public_tables %}<option value="{{ t }}">{% endfor %}
+    </datalist>
+    <button type="submit" class="btn">导出</button>
+  </p>
+</form>
+
+{% if blocked %}
+  <div class="notice notice-bad">
+    <span class="mono">{{ blocked }}</span> 命中了黑名单，不让导出。
+  </div>
+{% endif %}
+{% if error and not blocked %}
+  <div class="notice notice-bad"><span class="mono">{{ error }}</span></div>
+{% endif %}
+
+{% if raw_sql %}
+  <h2>服务端实际执行的语句</h2>
+  <pre class="payload">{{ raw_sql }}</pre>
+{% endif %}
+
+{% if rows %}
+  <h2>共 {{ rows | length }} 行</h2>
+  <table class="findings">
+    <thead>
+      <tr>{% for c in cols %}<th>{{ c }}</th>{% endfor %}</tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>{% for cell in r %}<td class="mono">{{ cell }}</td>{% endfor %}</tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% elif table and not error and not blocked %}
+  <p class="muted">这张表是空的。</p>
+{% endif %}
+
+<h2>黑名单里有哪些表</h2>
+<p class="mono small">{{ blocked_tables | join('、') }}</p>
+
+<h2>关键：这个位置在 SQL 里叫什么</h2>
+<table class="findings">
+  <tbody>
+    <tr>
+      <th class="mono">SELECT * FROM orders WHERE id = ?</th>
+      <td>值 —— <strong>参数化管得到</strong></td>
+    </tr>
+    <tr>
+      <th class="mono">SELECT * FROM orders</th>
+      <td>标识符 —— <strong>参数化管不到</strong></td>
+    </tr>
+  </tbody>
+</table>
+<p class="muted small">
+  参数化（<span class="mono">?</span>）只能用在<strong>值</strong>的位置：
+  数字、字符串、日期。表名、列名、排序目标 —— 这些是<strong>语法结构</strong>，
+  不能当参数传。
+</p>
+<p class="muted small">
+  所以「我用了参数化」不等于「我没有注入」。
+  <strong>只要有一个标识符来自用户输入，参数化就漏了一个口子。</strong>
+</p>
+<p class="muted small">
+  先自己试一下：<span class="mono">SELECT * FROM ?</span> 在 SQL 里合法吗？
+</p>
+
+<h2>那这份黑名单呢</h2>
+<p class="muted small">
+  它是怎么比较的？「整串相等」留下了一条很宽的路 ——
+  <strong>同一个表，其实有很多种写法。</strong>
+</p>
+<p class="muted small">
+  提示：想一想 SQLite 里有哪些东西叫"元数据表"，
+  它们不在黑名单里，而且能告诉你全部表名和列名。
+</p>
+{% endblock %}
