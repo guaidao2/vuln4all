@@ -27,6 +27,7 @@ import re
 import threading
 import uuid
 from pathlib import Path
+from markupsafe import Markup, escape
 
 from flask import Flask
 from flask.helpers import get_root_path
@@ -255,6 +256,7 @@ class Ctx:
                 FileSystemLoader(CORE_TEMPLATES),
             ]
         )
+        app.jinja_env.filters["rich"] = rich_text
         app.jinja_env.globals["VULN"] = self
         app.jinja_env.globals["V4A_HOME"] = "/"
         app.jinja_env.globals["V4A_STATIC"] = "/__vuln4all/static"
@@ -285,6 +287,34 @@ class Ctx:
 
     def __repr__(self) -> str:
         return "<Ctx %s>" % self.id
+
+
+# ------------------------------------------------------------------ 富文本
+#
+# 模块 info 里的说明文字（description / hint / solution）允许用一点点标记，
+# 因为纯文本里表达不了强调，而这三处正是最需要强调的地方。
+#
+# 只认两种，而且**先转义再替换** —— 反过来的话，说明文字里的尖括号就会
+# 变成真的标签，等于给模块作者留了一个注入口子。
+#
+# 加粗那一对负向断言 `/` 是必需的：说明文字里经常出现 SQL 的内联注释
+# `UNION/**/SELECT`，那里面的 `**` 是一个裸的双星号，不是加粗标记。
+_RICH_BOLD = re.compile(r"(?<!/)\*\*([^*]+?)\*\*(?!/)")
+_RICH_CODE = re.compile(r"`([^`]+?)`")
+
+
+def rich_text(value) -> Markup:
+    """把说明文字变成一小段 HTML。刻意不是完整的 Markdown。
+
+    · `**加粗**`   -> <strong>
+    · `` `等宽` `` -> <code>
+    换行原样保留，所以放进 <pre> 里就是等宽块。
+    """
+    text = "" if value is None else str(value)
+    html = escape(text)
+    html = _RICH_BOLD.sub(r"<strong>\1</strong>", html)
+    html = _RICH_CODE.sub(r"<code>\1</code>", html)
+    return Markup(html)
 
 
 class Vuln:

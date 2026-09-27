@@ -98,6 +98,19 @@ requirements.txt    额外依赖，一行一个包名
 - **`hint` / `solution` 是这题的教学主体**，会渲染成题目页上的两个折叠区。
   `hint` 写"先试什么、观察什么"，别直接把答案写进去；`solution` 给一条能直接
   复制的 payload。
+- **`description` / `hint` / `solution` 支持一点点标记**，因为纯文本里表达不了
+  强调，而这三处正是最需要强调的地方。只认两种：
+
+  | 写法 | 渲染成 |
+  |---|---|
+  | `**加粗**` | `<strong>加粗</strong>` |
+  | `` `等宽` `` | `<code>等宽</code>` |
+
+  换行原样保留，所以 `solution` 里那些缩进对齐的 payload 能保持形状。
+  **不是完整的 Markdown**（没有列表、链接、表格）——故意的，说明文字不需要那些。
+  其余内容一律按纯文本转义，写尖括号不会变成标签。
+  一个细节：加粗那一对星号前后不能紧跟着 `/`，所以 SQL 里那种
+  `UNION/**/SELECT` 不会被误当成加粗。
 - **`difficulty` 只是标签**，不影响任何行为，只影响清单页上的徽标和筛选按钮。
   填别的值也能跑，`doctor` 会提醒一句。
 - `author` 写你自己的名字 —— 这是别人知道"这题谁出的"的唯一途径。
@@ -474,7 +487,7 @@ return {"": portal, "attacker": ctx.flask(__name__, mount="attacker")}
 
 ## 12. 照着现成的题写
 
-仓库里 33 道题都是按这份契约写的，可以直接拿来对照：
+仓库里 37 道题都是按这份契约写的，可以直接拿来对照：
 
 ```
 modules/sqli/login_bypass/            字符串拼接 SQL（含 sqlite + seed）
@@ -503,6 +516,11 @@ modules/open_redirect/login_next/     两条件式的"站内跳转"校验（反�
 modules/host_header/password_reset/   "受信主机列表" + 自己记邮件箱
 modules/business_logic/price_tamper/  全部数值从表单来 + check() 从订单表推
 modules/info_leak/backup_files/       静态文件服务 + 故意的 dotfile 残留
+modules/business_logic/price_tamper/  客户端给的数值直接信 + check() 从订单表推
+modules/business_logic/coupon_stacking/ getlist() 收多个同名字段 + 用「低于基准」判定
+modules/business_logic/refund_logic/  退款流水表 + check() 对流水求和
+modules/business_logic/state_machine/ 状态转换表 + 一个旁挂的布尔字段当反面教材
+modules/upload/tar_symlink/           tarfile.extractall() 不传 filter + 符号链接穿越
 modules/race_condition/coupon_redeem/ 模块级内存状态 + 自己实现 reset()
 modules/jwt/alg_none/                 手搓 JWT（不引入额外依赖）
 ```

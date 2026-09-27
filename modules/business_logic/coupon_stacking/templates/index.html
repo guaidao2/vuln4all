@@ -1,0 +1,120 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}积分商城 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>积分商城 · 下单</h1>
+
+{% if last and last['stacked'] %}
+  <div class="notice notice-ok">
+    实付 <span class="mono">￥{{ last['paid'] }}</span>，
+    比「只用一张券」的最低线（<span class="mono">￥{{ best_single }}</span>）还低 ——
+    <strong>这题通了。</strong>
+  </div>
+{% endif %}
+
+<h2>购物车</h2>
+<table class="findings">
+  <tbody>
+    <tr><th>商品</th><td>{{ goods }}</td></tr>
+    <tr><th>单价</th><td class="mono">￥{{ price }}</td></tr>
+  </tbody>
+</table>
+
+<h2>优惠券</h2>
+<table class="findings">
+  <thead><tr><th>券号</th><th>说明</th><th>减</th></tr></thead>
+  <tbody>
+    {% for c in coupons %}
+    <tr>
+      <td class="mono">{{ c['code'] }}</td>
+      <td>{{ c['desc'] }}</td>
+      <td class="mono">￥{{ c['amount'] }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<div class="notice notice-bad">
+  <strong>业务规则：一次只能用一张券，同一张券不能用两次。</strong>
+</div>
+<p class="muted small">
+  这条规则写在页面上 —— 那么问题来了：<strong>它写在代码里了吗？</strong>
+</p>
+
+<form method="post" action="{{ url_for('order') }}">
+  <p>
+    <label>使用优惠券<br>
+      <select name="coupon">
+        <option value="">（不用券）</option>
+        {% for c in coupons %}
+        <option value="{{ c['code'] }}">{{ c['code'] }} —— {{ c['desc'] }}（减 {{ c['amount'] }}）</option>
+        {% endfor %}
+      </select>
+    </label>
+  </p>
+  <p><button type="submit" class="btn">下单</button></p>
+</form>
+
+<p class="muted small">
+  页面上这个下拉框只能选一张券。但真正的请求是你自己拼的：
+</p>
+<pre class="payload">curl -X POST \
+     --data-urlencode 'coupon=FULL200' \
+     --data-urlencode 'coupon=NEW30' \
+     '{{ url_for('order') }}'</pre>
+<p class="muted small">
+  看那个字段<strong>名</strong>出现了几次。服务端是怎么读它的？
+  （关键词：<span class="mono">request.form.get(...)</span> 和
+  <span class="mono">request.form.getlist(...)</span>）
+</p>
+
+{% if error %}<div class="notice notice-bad">{{ error }}</div>{% endif %}
+
+{% if last %}
+  <h2>这一单</h2>
+  <table class="findings">
+    <tbody>
+      <tr><th>用到的券</th>
+        <td class="mono">{{ last['codes'] | join('、') or '（无）' }}</td></tr>
+      <tr><th>总减免</th><td class="mono">￥{{ last['discount'] }}</td></tr>
+      <tr><th>实付</th>
+        <td class="mono {% if last['stacked'] %}err{% endif %}">￥{{ last['paid'] }}</td></tr>
+      <tr><th>「只用一张券」的最低线</th><td class="mono">￥{{ best_single }}</td></tr>
+    </tbody>
+  </table>
+{% endif %}
+
+<h2>订单记录</h2>
+{% if orders %}
+  <table class="findings">
+    <thead><tr><th>券</th><th>总减免</th><th>实付</th><th>时间</th></tr></thead>
+    <tbody>
+      {% for o in orders %}
+      <tr>
+        <td class="mono">{{ o['coupons'] }}</td>
+        <td class="mono">￥{{ '%.2f' % o['discount'] }}</td>
+        <td class="mono">￥{{ '%.2f' % o['paid'] }}</td>
+        <td class="muted small">{{ o['created'] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <p class="muted">还没有订单。</p>
+{% endif %}
+
+<form method="post" action="{{ url_for('clear') }}" style="margin-top:14px">
+  <button type="submit" class="btn btn-ghost">清空订单</button>
+</form>
+
+<h2>这一题跟「价格篡改」那道有什么区别</h2>
+<p class="muted small">
+  那道题是「某个<strong>数值</strong>不该由客户端给」——改掉一个数字就行。
+  这一题里每个数值都合法，问题是
+  <strong>「组合」不该由客户端决定</strong>：
+  把合法的值凑在一起就出问题了。
+</p>
+<p class="muted small">
+  后者更难防，因为需要的是「组合校验」，而不是「单个字段校验」。
+</p>
+{% endblock %}

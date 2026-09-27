@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 from flask import Flask, jsonify, redirect, render_template, request, url_for
 
 from . import doctor as doctor_mod
-from .contract import DIFFICULTIES, difficulty_key
+from .contract import DIFFICULTIES, difficulty_key, rich_text
 from .registry import Registry
 
 STATIC_URL_PATH = "/__vuln4all/static"
@@ -84,6 +84,8 @@ def create_core_app(registry: Registry, home: Path) -> Flask:
         static_folder="static",
         static_url_path=STATIC_URL_PATH,
     )
+    # core 自己的页面也要用 |rich（模块那些 app 是在 Ctx.flask() 里注册的）
+    app.jinja_env.filters["rich"] = rich_text
     app.jinja_env.globals.update(
         VULN=None,
         V4A_HOME="/",

@@ -247,6 +247,7 @@ vuln4all/
 │   ├── csrf/json_api/                 进阶（双挂载点）
 │   ├── upload/avatar/                 进阶
 │   ├── upload/zip_slip/               困难
+│   ├── upload/tar_symlink/            困难
 │   ├── command_injection/ping_tool/   进阶
 │   ├── command_injection/space_filter/ 困难（分隔符过滤绕过）
 │   ├── ssrf/url_preview/              进阶（双挂载点）
@@ -259,6 +260,9 @@ vuln4all/
 │   ├── open_redirect/login_next/      入门
 │   ├── host_header/password_reset/    进阶
 │   ├── business_logic/price_tamper/   入门
+│   ├── business_logic/coupon_stacking/ 进阶
+│   ├── business_logic/refund_logic/   进阶
+│   ├── business_logic/state_machine/  困难
 │   ├── info_leak/backup_files/        入门
 │   ├── flask_session/forged_cookie/   进阶（Python 独有）
 │   └── race_condition/coupon_redeem/  困难
@@ -274,6 +278,10 @@ vuln4all/
 带「过滤绕过」的那 5 道是一组：洞本身跟同分类的另一道题一样，多出来的是一层
 过滤器，考点变成「过滤器描述的是攻击长什么样，而不是什么结构是危险的」。
 过滤层都写在模块内部（一份正式的正则规则表），不依赖任何外部组件。
+
+`business_logic` 那 4 道也是一组，但它是**另一种组织方式**：不是同一个洞的变体，
+而是同一个**思维**的四种场景（改数值 → 改组合 → 改次数 → 改顺序）。
+这一类的特点是「每个单独校验都对」，缺的是组合、幂等、状态模型这些**结构性**的东西。
 
 ## 题目一览
 
@@ -297,6 +305,7 @@ vuln4all/
 | 进阶 | `csrf/json_api` | 个人中心 + 攻击者站 | 接口不看 Content-Type 就解析 JSON，`text/plain` 表单能伪造 |
 | 进阶 | `upload/avatar` | 头像上传 | 后缀黑名单大小写敏感 + 信客户端 Content-Type |
 | 困难 | `upload/zip_slip` | 批量上传头像包 | 手写解压循环把 zip 成员名当路径用 |
+| 困难 | `upload/tar_symlink` | 主题包上传 | `tarfile.extractall()` 默认不过滤；符号链接能指向外部 |
 | 进阶 | `command_injection/ping_tool` | 运维诊断面板 | 用户输入拼进 shell 命令 |
 | 困难 | `command_injection/space_filter` | 运维诊断面板 | 分隔符黑名单漏了换行；空格用 `${IFS}` 替掉 |
 | 进阶 | `ssrf/url_preview` | 聊天链接预览 | 白名单只做子串匹配，`@` 骗过校验 |
@@ -308,6 +317,9 @@ vuln4all/
 | 入门 | `open_redirect/login_next` | 统一登录 | `//evil.example` 与域名子串骗过「站内跳转」校验 |
 | 进阶 | `host_header/password_reset` | 忘记密码 | 重置链接的域名来自请求头；受信列表子串匹配 |
 | 入门 | `business_logic/price_tamper` | 积分商城 | 单价和数量都由客户端给，服务端不校验 |
+| 进阶 | `business_logic/coupon_stacking` | 积分商城 | 每个值都合法，缺的是「组合校验」；同名字段能传两次 |
+| 进阶 | `business_logic/refund_logic` | 积分商城 | 退款金额客户端给 + 没记「已退过」→ 同一单能退多次 |
+| 困难 | `business_logic/state_machine` | 积分商城 | 「已退款」是布尔字段不是状态 → 退款后还能确认收货 |
 | 入门 | `info_leak/backup_files` | 静态站点 | 根目录里躺着 `.env` / `.git` / 备份，直接请求就行 |
 | 进阶 | `flask_session/forged_cookie` | 订阅制 SaaS 后台 | 弱密钥硬编码，session 可以自己签 |
 | 困难 | `race_condition/coupon_redeem` | 限时优惠券 | check-then-act 不原子，并发领取 |

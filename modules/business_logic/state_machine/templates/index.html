@@ -1,0 +1,82 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}订单流转 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>积分商城 · 订单流转</h1>
+
+{% if reached %}
+  <div class="notice notice-ok">
+    这笔订单现在是「<span class="mono">{{ order['status'] }}</span>」，
+    而 <span class="mono">refunded = {{ order['refunded'] }}</span> ——
+    钱退了，货也「收到」了。<strong>这题通了。</strong>
+  </div>
+{% endif %}
+
+<h2>订单</h2>
+<table class="findings">
+  <tbody>
+    <tr><th>单号</th><td class="mono">{{ order['order_no'] }}</td></tr>
+    <tr><th>商品</th><td>{{ order['goods'] }}</td></tr>
+    <tr><th>状态</th><td class="mono">{{ order['status'] }}</td></tr>
+    <tr><th>refunded</th>
+      <td class="mono {% if order['refunded'] %}err{% endif %}">{{ order['refunded'] }}</td></tr>
+    <tr><th>实付</th><td class="mono">￥{{ paid }}</td></tr>
+  </tbody>
+</table>
+
+<h2>可以做的操作</h2>
+<form method="post" action="{{ url_for('ship') }}" style="display:inline">
+  <button type="submit" class="btn">确认发货</button>
+</form>
+<form method="post" action="{{ url_for('refund') }}" style="display:inline">
+  <button type="submit" class="btn">申请退款</button>
+</form>
+<form method="post" action="{{ url_for('confirm') }}" style="display:inline">
+  <button type="submit" class="btn">确认收货</button>
+</form>
+<form method="post" action="{{ url_for('clear') }}" style="display:inline">
+  <button type="submit" class="btn btn-ghost">重置到「已付款」</button>
+</form>
+
+{% if note %}<div class="notice notice-ok">{{ note }}</div>{% endif %}
+{% if error %}<div class="notice notice-bad">{{ error }}</div>{% endif %}
+
+<h2>状态机</h2>
+<pre class="payload">{% for state, nexts in transitions.items() %}{{ state }}  ->  {{ nexts | join('、') or '（终态）' }}
+{% endfor %}</pre>
+<p class="muted small">
+  这就是服务端心里的状态机。<strong>请仔细看一遍：「退款」在这张图上吗？</strong>
+</p>
+<p class="muted small">
+  不在。它是一个<strong>旁挂在订单上的布尔字段</strong> <span class="mono">refunded</span>。
+  而布尔字段可以和任何状态共存 —— 这就是这一题的全部。
+</p>
+
+<h2>操作历史</h2>
+{% if history %}
+  <table class="findings">
+    <thead><tr><th>#</th><th>动作</th><th>时间</th></tr></thead>
+    <tbody>
+      {% for h in history %}
+      <tr>
+        <td class="mono">{{ loop.index }}</td>
+        <td class="mono">{{ h['action'] }}</td>
+        <td class="muted small">{{ h['created'] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <p class="muted">还没有操作。</p>
+{% endif %}
+
+<h2>提示：每个接口自己的检查都是「对」的</h2>
+<p class="muted small">
+  发货只允许从「已付款」；退款只允许从「已付款」或「已发货」；
+  收货只允许从「已发货」。单看每一句都没问题。
+</p>
+<p class="muted small">
+  这一题要学的就是：<strong>把每句都对的检查拼起来，能拼出一条不该存在的路径。</strong>
+  这不是「忘了写一句 if」，是<strong>状态模型建错了</strong>。
+</p>
+{% endblock %}

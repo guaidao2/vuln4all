@@ -46,7 +46,7 @@
         </div>
         <h1 class="hero-title">{{ VULN.info.name }}</h1>
         {% if VULN.info.description %}
-          <p class="hero-desc">{{ VULN.info.description }}</p>
+          <p class="hero-desc">{{ VULN.info.description | rich }}</p>
         {% endif %}
       </div>
       <div class="hero-side">
@@ -97,7 +97,7 @@
         </summary>
         <div class="acc-body">
           {% if VULN.info.hint %}
-            <p>{{ VULN.info.hint }}</p>
+            <p>{{ VULN.info.hint | rich }}</p>
           {% else %}
             <p class="muted">这道题没写提示。</p>
           {% endif %}
@@ -115,7 +115,7 @@
         </summary>
         <div class="acc-body">
           {% if VULN.info.solution %}
-            <pre class="payload">{{ VULN.info.solution }}</pre>
+            <pre class="payload">{{ VULN.info.solution | rich }}</pre>
           {% else %}
             <p class="muted">这道题没写答案。</p>
           {% endif %}

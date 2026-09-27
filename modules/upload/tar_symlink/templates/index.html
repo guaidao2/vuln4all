@@ -1,0 +1,105 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}主题包上传 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>主题包上传</h1>
+<p class="muted small">
+  上传一个 tar 主题包，服务端会把它解开到主题目录里。
+  <span class="mono">.tar</span> / <span class="mono">.tar.gz</span> 都行。
+</p>
+
+<form method="post" action="{{ url_for('index') }}" enctype="multipart/form-data">
+  <p><input type="file" name="package" accept=".tar,.tar.gz,.tgz,application/x-tar"></p>
+  <p><button type="submit" class="btn">上传并解压</button></p>
+</form>
+
+<h2>受保护的那份说明</h2>
+{% if notice.strip() != baseline %}
+  <div class="notice notice-ok">
+    它<strong>被写掉了</strong> —— 而它不在主题目录里，正常解压碰不到它。
+    <strong>这题通了。</strong>
+  </div>
+{% endif %}
+<pre class="payload">{{ notice }}</pre>
+<p class="mono small">{{ notice_path }}</p>
+
+{% if report %}
+  {% if report.error %}
+    <div class="notice notice-bad">{{ report.error }}</div>
+  {% endif %}
+  {% if report.summary %}
+    <h2>这次解压看到的成员</h2>
+    <table class="findings">
+      <thead><tr><th>名字</th><th>类型</th></tr></thead>
+      <tbody>
+        {% for m in report.summary %}
+        <tr>
+          <td class="mono">{{ m['name'] }}</td>
+          <td class="mono">{{ m['kind'] }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if report.links %}
+      <p class="err small">
+        里面有链接成员：{{ report.links | join('、') }}
+      </p>
+    {% endif %}
+  {% endif %}
+  {% if report.escaped %}
+    <p class="err small">
+      有成员被写到了主题目录外面：{{ report.escaped | join('、') }}
+    </p>
+  {% endif %}
+{% endif %}
+
+<h2>目录结构</h2>
+<table class="findings">
+  <tbody>
+    <tr><th>解压目标</th><td class="mono">{{ theme_dir }}</td></tr>
+    <tr><th>受保护目录（同级）</th><td class="mono">{{ guard_dir }}</td></tr>
+  </tbody>
+</table>
+
+<h2>主题目录里的内容</h2>
+<p class="mono small">文件：{{ files | join('、') or '（空）' }}</p>
+{% if symlinks %}
+  <p class="err small">符号链接：{{ symlinks | join('　') }}</p>
+  <p class="muted small">
+    解压之后目录里留下了符号链接。<strong>注意它指向哪里</strong> ——
+    如果指到了主题目录外面，那解压时穿过它的文件也就写到外面去了。
+  </p>
+{% endif %}
+
+<form method="post" action="{{ url_for('reset_files') }}" style="margin-top:14px">
+  <button type="submit" class="btn btn-ghost">清空主题目录并恢复说明文件</button>
+</form>
+
+<h2>关键：tar 成员不只有「普通文件」</h2>
+<p class="muted small">
+  tar 格式的每个成员都有一个 <span class="mono">type</span>：
+  <span class="mono">REGTYPE</span>（普通文件）、<span class="mono">DIRTYPE</span>、
+  <strong><span class="mono">SYMTYPE</span>（符号链接）</strong>、
+  <span class="mono">LNKTYPE</span>（硬链接）……
+</p>
+<p class="muted small">
+  而符号链接的目标可以是<strong>绝对路径</strong>。想一下：
+  如果压缩包里先放一个指向外部的链接，再放一个路径穿过那个链接的文件，
+  服务端解压时会发生什么？
+</p>
+
+<h2>服务端用的是标准库</h2>
+<pre class="payload">archive.extractall(theme_dir)</pre>
+<p class="muted small">
+  没有传 <span class="mono">filter=</span>。而在这个 Python 版本上，
+  <strong><span class="mono">extractall()</span> 默认不过滤任何东西</strong> ——
+  它会把归档里的成员按名字原样铺到磁盘上，包括符号链接和绝对路径。
+</p>
+<p class="muted small">
+  这跟 <span class="mono">upload/zip_slip</span> 那道题正好相反：
+  那边 <span class="mono">zipfile</span> 的默认值是<strong>安全</strong>的，
+  洞出现在"开发者手写循环"的地方。
+  <strong>所以「我用的标准库」不等于「默认值是对的」——</strong>
+  每换一个格式都要重新确认一遍。
+</p>
+{% endblock %}

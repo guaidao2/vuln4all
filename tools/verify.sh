@@ -988,6 +988,62 @@ PY
 )
 expect_has "模板里没有漏掉的 Markdown 加粗" "BOLD_COUNT=0" "$bold"
 
+# info 里的说明文字走 |rich 渲染（只认 **加粗** 和 `等宽`）。
+# 如果哪个字符串里出现落单的星号，那个地方在页面上会显示成字面星号 —— 查一遍。
+# 注意 `UNION/**/SELECT` 这种是合法的（SQL 内联注释），渲染器有意不碰它。
+rich=$(python3 - <<'PY'
+import ast, pathlib, re, sys
+
+sys.path.insert(0, ".")
+from vuln4all.contract import _RICH_BOLD, _RICH_CODE
+
+BAD = re.compile(r"\*\*")
+
+hits = []
+for path in sorted(pathlib.Path("modules").rglob("module.py")):
+    if "__pycache__" in str(path):
+        continue
+    rel = path.as_posix()
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+    except SyntaxError:
+        continue                      # 语法错由别的检查报，这里不重复
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Dict):
+            continue
+        for k, v in zip(node.keys, node.values):
+            if not isinstance(k, ast.Constant):
+                continue
+            if k.value not in ("description", "hint", "solution"):
+                continue
+            if not (isinstance(v, ast.Constant) and isinstance(v.value, str)):
+                continue
+            text = v.value
+            # 按渲染器的方式过一遍：命中加粗/等宽的先挖掉，剩下的星号就是落单的
+            left = _RICH_BOLD.sub("", text)
+            left = _RICH_CODE.sub("", left)
+            if BAD.search(left):
+                for m in re.finditer(r".{0,25}\*\*.{0,25}", left):
+                    hits.append("%s.%s  ...%s..." % (rel, k.value, m.group(0).replace("\n", " ")))
+                    break
+
+print("RICH_COUNT=%d" % len(hits))
+for item in hits[:8]:
+    print("  " + item)
+PY
+)
+expect_has "info 里的说明文字没有落单的星号" "RICH_COUNT=0" "$rich"
+
+# 光测过滤器不够 —— 直接看渲染出来的页面上强调有没有变成标签。
+# （清单页和题目页是两个不同的 app，两边都得注册 |rich，漏一边就会 500。）
+raw_card=$(curl -s "$BASE/")
+expect_has "清单页把说明文字里的强调渲染成了 strong" "<strong>" "$raw_card"
+expect_no "清单页上没有字面的 ** 残留" "**" "$raw_card"
+
+raw_mod=$(curl -s "$BASE/v/business_logic/coupon_stacking/")
+expect_has "题目页把 hint/solution 里的强调渲染成了 strong" "<strong>" "$raw_mod"
+expect_no "题目页上没有字面的 ** 残留" "**" "$raw_mod"
+
 # 面向别人的文档里不该出现内网地址、明文口令这类只属于某一套环境的信息。
 # （靶场题目内容里的假内网地址是有意为之，所以这里只扫 README 和 docs/。）
 leak=$(python3 - <<'PY'
@@ -1679,6 +1735,177 @@ expect_code "kid=/dev/null 让服务端用空密钥验签 —— 伪造的 token
 expect_has "拿到了 admin 数据" "ADMIN-AREA-7c4f" "$(cat /tmp/v4a-jwt-out.json)"
 expect_solved "jwt/kid_injection" "check() 确认 kid 注入通关"
 rm -f /tmp/v4a-jwt.py /tmp/v4a-jwt-out.json
+
+step "16. 业务逻辑系列 + tar 符号链接"
+
+# ---- business_logic/coupon_stacking：单个值合法，组合不合法
+expect_unsolved "business_logic/coupon_stacking" "动手之前 check() 说未通关"
+
+body=$(page -X POST "$BASE/v/business_logic/coupon_stacking/order" \
+  --data-urlencode "coupon=FULL200")
+expect_has "正常用一张券（300 - 50 = 250）" "250.00" "$body"
+expect_unsolved "business_logic/coupon_stacking" "只用一张券不算叠加"
+
+# 同一个字段名出现两次 —— 这是 HTTP 允许的，跟界面上有几个下拉框无关
+body=$(page -X POST "$BASE/v/business_logic/coupon_stacking/order" \
+  --data-urlencode "coupon=FULL200" --data-urlencode "coupon=NEW30")
+expect_has "两张不同的券一起用（300 - 50 - 30 = 220）" "220.00" "$body"
+expect_solved "business_logic/coupon_stacking" "check() 确认叠加生效"
+
+# 同一张券用两次是同一个洞的另一种用法
+curl -s -o /dev/null -X POST "$BASE/__vuln4all/reset" \
+  --data-urlencode "id=business_logic/coupon_stacking" --data-urlencode "next=/"
+expect_unsolved "business_logic/coupon_stacking" "reset 之后回到未通关"
+body=$(page -X POST "$BASE/v/business_logic/coupon_stacking/order" \
+  --data-urlencode "coupon=FULL200" --data-urlencode "coupon=FULL200")
+expect_has "同一张券用两次（300 - 50 - 50 = 200）" "200.00" "$body"
+expect_solved "business_logic/coupon_stacking" "重复用同一张券同样算通关"
+
+# 三张全上
+curl -s -o /dev/null -X POST "$BASE/__vuln4all/reset" \
+  --data-urlencode "id=business_logic/coupon_stacking" --data-urlencode "next=/"
+body=$(page -X POST "$BASE/v/business_logic/coupon_stacking/order" \
+  --data-urlencode "coupon=FULL200" --data-urlencode "coupon=NEW30" \
+  --data-urlencode "coupon=VIP20")
+expect_has "三张券叠加（300 - 100 = 200）" "200.00" "$body"
+expect_solved "business_logic/coupon_stacking" "三张券叠加也算通关"
+
+# 反向：不认识的券要被忽略，而且不能把它当成"用了券"
+body=$(page -X POST "$BASE/v/business_logic/coupon_stacking/order" \
+  --data-urlencode "coupon=NOT-A-COUPON")
+expect_has "不认识的券会被忽略" "不认识的券" "$body"
+
+# ---- business_logic/refund_logic：退款不退货
+expect_unsolved "business_logic/refund_logic" "动手之前 check() 说未通关"
+
+body=$(page -X POST "$BASE/v/business_logic/refund_logic/refund" \
+  --data-urlencode "order=SO-2026-0001" --data-urlencode "amount=199.00")
+expect_has "正常退一次款" "退款已处理" "$body"
+expect_unsolved "business_logic/refund_logic" "退一次不算超退"
+
+# 幂等性缺失：完全一样的请求再发一次
+body=$(page -X POST "$BASE/v/business_logic/refund_logic/refund" \
+  --data-urlencode "order=SO-2026-0001" --data-urlencode "amount=199.00")
+expect_has "同一个请求再发一次还是会被受理" "退款已处理" "$body"
+expect_solved "business_logic/refund_logic" "check() 确认退款总额超过实付"
+
+# 另一条路：金额由客户端给
+curl -s -o /dev/null -X POST "$BASE/__vuln4all/reset" \
+  --data-urlencode "id=business_logic/refund_logic" --data-urlencode "next=/"
+expect_unsolved "business_logic/refund_logic" "reset 之后回到未通关"
+body=$(page -X POST "$BASE/v/business_logic/refund_logic/refund" \
+  --data-urlencode "order=SO-2026-0001" --data-urlencode "amount=9999.00")
+expect_has "金额填大一点也能过" "退款已处理" "$body"
+expect_solved "business_logic/refund_logic" "改金额同样算通关"
+
+# 反向：订单号不对要被拒
+body=$(page -X POST "$BASE/v/business_logic/refund_logic/refund" \
+  --data-urlencode "order=SO-9999-9999" --data-urlencode "amount=1.00")
+expect_has "不存在的订单被拒" "没有这个订单" "$body"
+
+# ---- business_logic/state_machine：状态机乱序
+expect_unsolved "business_logic/state_machine" "动手之前 check() 说未通关"
+
+# 正常流程：发货 -> 收货。这个顺序不该通关
+body=$(page -X POST "$BASE/v/business_logic/state_machine/ship" \
+  --data-urlencode "order=SO-2026-0002")
+expect_has "发货成功" "已发货" "$body"
+body=$(page -X POST "$BASE/v/business_logic/state_machine/confirm" \
+  --data-urlencode "order=SO-2026-0002")
+expect_has "收货成功" "已确认收货" "$body"
+expect_unsolved "business_logic/state_machine" "没退款就收货不算乱序"
+
+# 反向：重置之后没发货就想收货要被拒
+curl -s -o /dev/null -X POST "$BASE/__vuln4all/reset" \
+  --data-urlencode "id=business_logic/state_machine" --data-urlencode "next=/"
+body=$(page -X POST "$BASE/v/business_logic/state_machine/confirm" \
+  --data-urlencode "order=SO-2026-0002")
+expect_has "「已付款」不能直接收货" "只有「已发货」" "$body"
+
+# 反向：同一笔订单退两次要被拒（这一题的退款本身是幂等的）
+body=$(page -X POST "$BASE/v/business_logic/state_machine/refund" \
+  --data-urlencode "order=SO-2026-0002")
+expect_has "第一次退款成功" "退款已处理" "$body"
+body=$(page -X POST "$BASE/v/business_logic/state_machine/refund" \
+  --data-urlencode "order=SO-2026-0002")
+expect_has "第二次退款被拒" "已经退过款了" "$body"
+expect_unsolved "business_logic/state_machine" "只退款不收货不算乱序"
+
+# 乱序：发货 -> 退款 -> 收货。每一步都"合法"
+curl -s -o /dev/null -X POST "$BASE/__vuln4all/reset" \
+  --data-urlencode "id=business_logic/state_machine" --data-urlencode "next=/"
+body=$(page -X POST "$BASE/v/business_logic/state_machine/ship" \
+  --data-urlencode "order=SO-2026-0002")
+expect_has "第一步：发货" "已发货" "$body"
+body=$(page -X POST "$BASE/v/business_logic/state_machine/refund" \
+  --data-urlencode "order=SO-2026-0002")
+expect_has "第二步：退款（status 没变，只置了 refunded）" "status 没变" "$body"
+expect_unsolved "business_logic/state_machine" "退了款但还没收货，仍不算"
+body=$(page -X POST "$BASE/v/business_logic/state_machine/confirm" \
+  --data-urlencode "order=SO-2026-0002")
+expect_has "第三步：收货居然还能成功" "已确认收货" "$body"
+expect_solved "business_logic/state_machine" "check() 确认「已退款 + 已完成」同时成立"
+
+# ---- upload/tar_symlink：tarfile 的默认值不安全
+expect_unsolved "upload/tar_symlink" "动手之前 check() 说未通关"
+
+cat > /tmp/v4a-tar-build.py <<'PYEOF'
+import io, sys, tarfile
+
+mode = sys.argv[1]          # normal | evil
+out = sys.argv[2]
+target = sys.argv[3] if len(sys.argv) > 3 else ""
+
+if mode == "normal":
+    with tarfile.open(out, "w") as tf:
+        data = b"body { margin: 0 }\n"
+        member = tarfile.TarInfo("mytheme/style.css")
+        member.size = len(data)
+        tf.addfile(member, io.BytesIO(data))
+else:
+    with tarfile.open(out, "w") as tf:
+        # 一、先建一个指向外部的符号链接
+        link = tarfile.TarInfo("escape")
+        link.type = tarfile.SYMTYPE
+        link.linkname = target
+        tf.addfile(link)
+        # 二、再放一个路径穿过那个链接的普通文件
+        data = b"TAR-SYMLINK-ESCAPED\n"
+        member = tarfile.TarInfo("escape/notice.txt")
+        member.size = len(data)
+        tf.addfile(member, io.BytesIO(data))
+PYEOF
+
+# 受保护文件和目录的路径从页面里读，别硬编码
+ts_page=$(page "$BASE/v/upload/tar_symlink/")
+ts_notice=$(page_path "$ts_page" "notice\.txt")
+ts_guard=$(dirname "$ts_notice")
+if [ -n "$ts_guard" ]; then
+  ok "从页面里读到了受保护目录（$ts_guard）"
+else
+  bad "页面里找不到受保护文件的路径"
+fi
+
+python3 /tmp/v4a-tar-build.py normal /tmp/v4a-ok.tar
+body=$(page -X POST "$BASE/v/upload/tar_symlink/" \
+  -F "package=@/tmp/v4a-ok.tar;type=application/x-tar")
+expect_has "正常主题包被解开" "mytheme/style.css" "$body"
+expect_unsolved "upload/tar_symlink" "正常主题包不该通关"
+
+printf '%s' 'this is definitely not a tar' > /tmp/v4a-notatar.tar
+body=$(page -X POST "$BASE/v/upload/tar_symlink/" \
+  -F "package=@/tmp/v4a-notatar.tar;type=application/x-tar")
+expect_has "不是 tar 的文件被拒" "不是一个合法的 tar" "$body"
+
+python3 /tmp/v4a-tar-build.py evil /tmp/v4a-evil.tar "$ts_guard"
+body=$(page -X POST "$BASE/v/upload/tar_symlink/" \
+  -F "package=@/tmp/v4a-evil.tar;type=application/x-tar")
+expect_has "解压报告里标出了落到主题目录外面的成员" "写到了主题目录外面" "$body"
+expect_solved "upload/tar_symlink" "check() 确认受保护文件被覆盖"
+
+body=$(page "$BASE/v/upload/tar_symlink/")
+expect_has "受保护的那份说明确实被写掉了" "TAR-SYMLINK-ESCAPED" "$body"
+rm -f /tmp/v4a-tar-build.py /tmp/v4a-ok.tar /tmp/v4a-evil.tar /tmp/v4a-notatar.tar
 
 step "结果"
 printf '  通过 %d 项，失败 %d 项\n' "$PASS" "$FAIL"

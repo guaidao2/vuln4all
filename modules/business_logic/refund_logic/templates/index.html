@@ -1,0 +1,88 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}订单退款 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>积分商城 · 订单退款</h1>
+
+{% if over %}
+  <div class="notice notice-ok">
+    退款总额 <span class="mono">￥{{ refunded_total }}</span>
+    已经超过实付 <span class="mono">￥{{ paid }}</span> ——
+    <strong>这题通了。</strong>
+  </div>
+{% endif %}
+
+<h2>订单</h2>
+<table class="findings">
+  <tbody>
+    <tr><th>单号</th><td class="mono">{{ order['order_no'] }}</td></tr>
+    <tr><th>商品</th><td>{{ order['goods'] }}</td></tr>
+    <tr><th>状态</th><td class="mono">{{ order['status'] }}</td></tr>
+    <tr><th>实付</th><td class="mono">￥{{ paid }}</td></tr>
+  </tbody>
+</table>
+
+<h2>申请退款</h2>
+<form method="post" action="{{ url_for('refund') }}">
+  <p>
+    <input type="hidden" name="order" value="{{ order['order_no'] }}">
+    <label>退款金额<br>
+      <input type="text" name="amount" value="{{ remaining }}" style="min-width:160px">
+    </label>
+    <button type="submit" class="btn">提交退款</button>
+  </p>
+</form>
+<p class="muted small">
+  上面那个输入框的默认值已经替你填好了。想一想：
+  <strong>「填好了默认值」和「校验过了」是一回事吗？</strong>
+</p>
+
+{% if ok %}<div class="notice notice-ok">{{ ok }}</div>{% endif %}
+{% if error %}<div class="notice notice-bad">{{ error }}</div>{% endif %}
+
+<h2>退款流水</h2>
+<table class="findings">
+  <tbody>
+    <tr><th>已退总额</th><td class="mono">￥{{ refunded_total }}</td></tr>
+    <tr><th>还剩可退（实付 - 已退）</th>
+      <td class="mono {% if over %}err{% endif %}">￥{{ remaining }}</td></tr>
+    <tr><th>账户余额</th><td class="mono">￥{{ balance }}</td></tr>
+  </tbody>
+</table>
+
+{% if refunds %}
+  <table class="findings">
+    <thead><tr><th>#</th><th>退款金额</th><th>时间</th></tr></thead>
+    <tbody>
+      {% for r in refunds %}
+      <tr>
+        <td class="mono">{{ loop.index }}</td>
+        <td class="mono">￥{{ '%.2f' % r['amount'] }}</td>
+        <td class="muted small">{{ r['created'] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <p class="muted">还没有退过款。</p>
+{% endif %}
+
+<form method="post" action="{{ url_for('clear') }}" style="margin-top:14px">
+  <button type="submit" class="btn btn-ghost">清空退款记录</button>
+</form>
+
+<h2>这一类漏洞要问的三个问题</h2>
+<p class="muted small">
+  一、<strong>这个动作允许做几次？</strong>再做一次会怎么样？<br>
+  二、<strong>该退多少是服务端算的，还是客户端说的？</strong><br>
+  三、<strong>「已经做过」这件事，服务端记在哪？</strong>
+</p>
+<p class="muted small">
+  这三个问题适用于几乎所有"会改变钱或状态"的接口。
+</p>
+<p class="muted small">
+  顺带一提：如果两次退款请求<strong>同时</strong>到达，那就是竞态条件了 ——
+  去看 <span class="mono">race_condition/coupon_redeem</span>，
+  那是同一个洞的另一个角度（"没记录"vs"记录和检查之间有间隙"）。
+</p>
+{% endblock %}

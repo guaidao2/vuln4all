@@ -90,7 +90,7 @@
             {% endfor %}
           </div>
           {% if entry.info.description %}
-            <p class="card-desc">{{ entry.info.description }}</p>
+            <p class="card-desc">{{ entry.info.description | rich }}</p>
           {% endif %}
           {% if entry.visible_mounts | length > 1 %}
             <p class="card-mounts">另有入口：
