@@ -1,0 +1,103 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}库存查询 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>库存查询</h1>
+<p class="muted small">
+  输入商品编号，看还有多少库存。
+</p>
+
+<form method="post" action="{{ url_for('query_stock') }}">
+  <p>
+    <input type="text" name="sku_id" value="{{ sku_id }}" style="min-width:420px"
+           placeholder="例如 1001">
+    <button type="submit" class="btn">查询</button>
+  </p>
+</form>
+
+{% if blocked %}
+  <div class="notice notice-bad">
+    被安全策略拦下了。命中的规则：<strong>{{ blocked }}</strong>
+  </div>
+  <p class="muted small">
+    过滤器按顺序跑这几条规则：{% for r in rules %}<span class="mono">{{ r }}</span>{% if not loop.last %} · {% endif %}{% endfor %}
+  </p>
+{% endif %}
+{% if error and not blocked %}
+  <div class="notice notice-bad"><span class="mono">{{ error }}</span></div>
+{% endif %}
+
+{% if rows %}
+  <h2>查到 {{ rows | length }} 条</h2>
+  <table class="findings">
+    <thead><tr><th>id</th><th>编号</th><th>库存</th></tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="mono">{{ r['id'] }}</td>
+        <td class="mono">{{ r['sku'] }}</td>
+        <td class="mono">{{ r['qty'] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% elif sku_id and not blocked %}
+  <p class="muted">没有这个编号。</p>
+{% endif %}
+
+{% if raw_sql %}
+  <h2>服务端实际执行的语句</h2>
+  <pre class="payload">{{ raw_sql }}</pre>
+  <p class="muted small">
+    <strong>看你输的那个编号两边有没有引号。</strong>
+    如果没有，那这就是个<strong>数字型</strong>注入点 ——
+    闭合引号那一步根本不需要。
+  </p>
+{% endif %}
+
+<h2>用真假来读数据</h2>
+<p class="muted small">
+  目标密码：<strong>{{ length }}</strong> 位，字符集是
+  <strong>小写字母 + 数字</strong>（{{ alphabet_size }} 个）。
+</p>
+
+<form method="post" action="{{ url_for('submit') }}">
+  <p>
+    <label>把你猜出来的密码提交上来：<br>
+      <input type="text" name="guess" value="" placeholder="{{ length }} 位">
+    </label>
+  </p>
+  <p><button type="submit" class="btn">提交</button></p>
+</form>
+
+{% if feedback %}
+  {% if feedback[0] == 'ok' %}
+    <div class="notice notice-ok">{{ feedback[1] }}<strong>这题通了。</strong></div>
+  {% else %}
+    <div class="notice notice-bad">{{ feedback[1] }}再回去多问几次。</div>
+  {% endif %}
+{% endif %}
+
+<h2>两个"看起来很合理"的结论</h2>
+<table class="findings">
+  <tbody>
+    <tr>
+      <th>「引号被拦了，注入打不了」</th>
+      <td><strong>错</strong> —— 这一题是数字型，不需要引号。而真要写字符串字面量的时候，
+          还有不用引号的写法</td>
+    </tr>
+    <tr>
+      <th>「UNION 被拦了，读不出数据」</th>
+      <td><strong>错</strong> —— UNION 只是一种信道</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>关键的一问</h2>
+<p class="muted small">
+  <strong>如果不能用引号，怎么在 SQL 里写一个字符串字面量？</strong>
+</p>
+<p class="muted small">
+  （想想：SQL 里有没有函数，能用数字"拼"出一串字符？）
+</p>
+{% endblock %}

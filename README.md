@@ -239,10 +239,12 @@ vuln4all/
 │   ├── sqli/boolean_blind/            困难（布尔盲注）
 │   ├── sqli/sleepless_time_blind/     困难（数据库没有 SLEEP）
 │   ├── sqli/second_order/             困难（二次注入）
+│   ├── sqli/quote_filter/             困难（引号被过滤）
 │   ├── xss/reflect_search/            入门
 │   ├── xss/stored_guestbook/          入门
 │   ├── xss/dom_based/                 进阶
 │   ├── xss/tag_filter/                困难（标签过滤绕过）
+│   ├── xss/js_context/                进阶（注入点在 JS 字符串里）
 │   ├── idor/order_detail/             入门
 │   ├── idor/admin_endpoint/           进阶
 │   ├── path_traversal/file_download/  入门
@@ -271,7 +273,8 @@ vuln4all/
 │   ├── business_logic/state_machine/  困难
 │   ├── info_leak/backup_files/        入门
 │   ├── flask_session/forged_cookie/   进阶（Python 独有）
-│   └── race_condition/coupon_redeem/  困难
+│   ├── race_condition/coupon_redeem/  困难
+│   └── dos/regex_backtracking/        困难（ReDoS，正则回溯）
 ├── tools/                       # 辅助脚本
 │   ├── deploy.py                #   把一个项目副本同步到另一台机器
 │   └── verify.sh                #   端到端验证：起靶场 + 逐题打一遍
@@ -333,6 +336,9 @@ vuln4all/
 | 进阶 | `business_logic/refund_logic` | 积分商城 | 退款金额客户端给 + 没记「已退过」→ 同一单能退多次 |
 | 困难 | `business_logic/state_machine` | 积分商城 | 「已退款」是布尔字段不是状态 → 退款后还能确认收货 |
 | 入门 | `info_leak/backup_files` | 静态站点 | 根目录里躺着 `.env` / `.git` / 备份，直接请求就行 |
+| 困难 | `sqli/quote_filter` | 库存查询 | 引号/注释/`union` 都被拦；数字型不需要引号，字面量用 `char()` 拼 |
+| 进阶 | `xss/js_context` | 站内搜索 | 值被嵌进 `<script>` 里的 JS 字符串；`</script>` 打断元素，过滤器只拦开始标签 |
+| 困难 | `dos/regex_backtracking` | 文章打标签 | 灾难性回溯：27 字节输入让校验卡 3 秒，每加 2 字符 ×4 |
 | 进阶 | `flask_session/forged_cookie` | 订阅制 SaaS 后台 | 弱密钥硬编码，session 可以自己签 |
 | 困难 | `race_condition/coupon_redeem` | 限时优惠券 | check-then-act 不原子，并发领取 |
 | 困难 | `jwt/alg_none` | 开放 API 平台 | 验签算法从 token 自己声明的 `alg` 里读 |

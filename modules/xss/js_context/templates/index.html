@@ -1,0 +1,120 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}站内搜索 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>站内搜索</h1>
+<p class="muted small">
+  搜索关键词会被页面上的 JS 记住，用来做「最近搜索」。
+</p>
+
+<form method="post" action="{{ url_for('index') }}">
+  <p>
+    <input type="text" name="q" value="{{ q }}" style="min-width:420px"
+           placeholder="搜点什么">
+    <button type="submit" class="btn">搜索</button>
+  </p>
+</form>
+
+{% if blocked %}
+  <div class="notice notice-bad">
+    被过滤器拦下了。命中的规则：<strong>{{ blocked }}</strong>
+  </div>
+  <p class="muted small">
+    过滤器拦的是：{% for r in rules %}<span class="mono">{{ r }}</span>{% if not loop.last %} · {% endif %}{% endfor %}
+  </p>
+{% endif %}
+
+{% if embedded %}
+  <h2>你输入的内容被嵌进了这一行</h2>
+  <pre class="payload">var recentQuery = {{ embedded }};</pre>
+  <p class="muted small">
+    <strong>注意：上面这个方块里是「转义显示」的形式。</strong>
+    这一页自己也是一张网页，所以它<strong>必须</strong>把内容转义了才能安全地显示给你 ——
+    否则这一页自己就会中招。
+  </p>
+  <p class="muted small">
+    所以想看<strong>真正发出去的字节</strong>，用 curl 看响应体：
+  </p>
+  <pre class="payload">curl -s -X POST --data-urlencode 'q=&lt;你的输入&gt;' \
+     '{{ url_for('index') }}' | grep recentQuery</pre>
+  <p class="muted small">
+    这一行在页面的 <span class="mono">&lt;script&gt;</span> 里面。
+    也就是说 —— <strong>你的输入变成了 JavaScript 源码的一部分。</strong>
+  </p>
+  <p class="muted small">
+    （顺带说：上面这个"必须转义才能安全显示"的现象本身，
+    就是这一题要教的东西 —— <strong>一段内容在不同上下文里需要不同的处理</strong>。
+    下面那段真的 JS 里，同一个值就<strong>没有</strong>转义。）
+  </p>
+  <p class="muted small">
+    服务端做的处理是 <span class="mono">json.dumps</span>：它处理了 JS 的字符串语法
+    （引号、反斜杠、控制字符）。
+  </p>
+{% endif %}
+
+<h2>这一题的关键：`&lt;script&gt;` 是「原始文本元素」</h2>
+<p class="muted small">
+  在 <span class="mono">&lt;script&gt;</span> 里面，浏览器只找一件事：
+  <span class="mono">&lt;/script</span>。所有 HTML 实体都<strong>不解码</strong>。
+</p>
+<table class="findings">
+  <tbody>
+    <tr><th class="mono">&amp;lt;/script&amp;gt;</th><td>只是普通文本 —— <strong>关不掉</strong> script 元素</td></tr>
+    <tr><th class="mono">&lt;/script&gt;</th><td>原文出现 → <strong>script 元素立刻结束</strong></td></tr>
+  </tbody>
+</table>
+<p class="muted small">
+  自己验一下：搜 <span class="mono">&amp;lt;b&amp;gt;</span>，
+  然后看页面源码里 script 那一段 —— 它有没有变成 <span class="mono">&lt;b&gt;</span>？
+</p>
+
+<h2>过滤器拦的是哪种标签</h2>
+<p class="muted small">
+  规则是 <span class="mono">&lt;script</span>（开始标签）。
+  那问题来了：<strong>开始标签和结束标签是同一个字符串吗？</strong>
+</p>
+
+<h2>页面里真实的那段 JS</h2>
+<pre class="payload">&lt;script&gt;
+  // ↓↓↓ 洞就在这里：这个值被 json.dumps 处理过，但没做 HTML 层的转义 ↓↓↓
+  var recentQuery = {{ embedded }};
+  // ↑↑↑ 正确做法：{{ '{{' }} recentQuery | tojson {{ '}}' }} ↑↑↑
+  ...写入 localStorage...
+&lt;/script&gt;</pre>
+<p class="muted small">
+  （上面这个方块是<strong>转义后</strong>显示的 ——
+  和页面最后那段真实的 <span class="mono">&lt;script&gt;</span> 对比着看。）
+</p>
+
+<h2>为什么 <span class="mono">json.dumps</span> 不够</h2>
+<p class="muted small">
+  它做的是 <strong>JS 层面</strong>的序列化 —— 它知道这段数据要当 JS 解析。
+  但它<strong>不知道</strong>这段 JSON 还要嵌进 HTML 的 script 元素里。
+</p>
+<p class="muted small">
+  而对 HTML 解析器来说，<span class="mono">&lt;/script&gt;</span> 的语义不是
+  「JS 字符串里的几个字符」，是「<strong>结束这个元素</strong>」。
+</p>
+<p class="muted small">
+  正确做法是按最终上下文转义 ——
+  Flask 的 <span class="mono">|tojson</span> 会把 <span class="mono">&lt;</span>
+  转成 <span class="mono">\u003c</span>，正是为了这件事。
+</p>
+
+{#- 真实的那段 JS：这里<strong>没有</strong>转义 —— 洞就在 |safe 上。
+    注意它和上面那个显示用的方块是两回事：方块里必须转义（否则这一页自己中招），
+    而这一段正是要展示"不转义会怎样"。 -#}
+<script>
+  var recentQuery = {{ embedded | safe }};
+  var recent = [];
+  try {
+    recent = JSON.parse(localStorage.getItem("v4a-recent") || "[]");
+  } catch (e) { recent = []; }
+  if (recentQuery) {
+    recent.unshift(recentQuery);
+    try {
+      localStorage.setItem("v4a-recent", JSON.stringify(recent.slice(0, 5)));
+    } catch (e) {}
+  }
+</script>
+{% endblock %}

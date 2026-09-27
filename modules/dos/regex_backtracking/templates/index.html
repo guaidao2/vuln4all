@@ -1,0 +1,102 @@
+{% extends "vuln4all/base.html" %}
+{% block title %}打标签 - {{ VULN.info.name }}{% endblock %}
+
+{% block content %}
+<h1>给文章打标签</h1>
+<p class="muted small">
+  填一串标签，用空格分隔。服务端会校验格式合不合法。
+</p>
+
+<form method="post" action="{{ url_for('index') }}">
+  <p>
+    <input type="text" name="tags" value="{{ raw }}" style="min-width:420px"
+           placeholder="例如 work urgent review">
+    <button type="submit" class="btn">校验</button>
+  </p>
+</form>
+
+{% if too_long %}
+  <div class="notice notice-bad">
+    输入超过 {{ max_input }} 个字符了，靶场不处理。
+  </div>
+  <p class="muted small">
+    这一条<strong>不是修复</strong>，是为了不让一个请求卡住几分钟 ——
+    真实的修复在下面「怎么修」那一节。但要说明白：<strong>给输入设上限本身就是
+    修复的一部分</strong>（理由见下）。
+  </p>
+{% endif %}
+
+{% if elapsed is not none %}
+  <h2>校验结果</h2>
+  <table class="findings">
+    <tbody>
+      <tr><th>结论</th><td>{{ verdict }}</td></tr>
+      <tr><th>耗时</th>
+        <td class="mono {% if elapsed > 2 %}err{% endif %}">{{ '%.4f' % elapsed }} 秒</td></tr>
+      <tr><th>输入长度</th><td class="mono">{{ raw | length }} 个字符</td></tr>
+    </tbody>
+  </table>
+  <p class="muted small">
+    页面上把耗时直接打出来了 —— 方便你校准。
+    真实环境里没人会告诉你，你得自己计时。
+  </p>
+{% endif %}
+
+<h2>服务端用的那条正则</h2>
+<pre class="payload">{{ pattern }}</pre>
+<p class="muted small">
+  仔细看它的结构。两个问题：
+</p>
+<p class="muted small">
+  一、<span class="mono">\w+</span> 和 <span class="mono">\s?</span>
+  <strong>能匹配的字符集合有没有重叠</strong>？<br>
+  二、<span class="mono">\s?</span> 那个问号意味着它可以匹配
+  <strong>「没有字符」</strong> —— 这对正则引擎意味着什么？
+</p>
+
+<h2>先试这个</h2>
+<table class="findings">
+  <tbody>
+    <tr><th>正常输入</th><td class="mono">work urgent review → 秒过</td></tr>
+    <tr><th>要让它慢</th><td class="mono">一串重复字符 + 一个它不认的字符（比如 !）</td></tr>
+  </tbody>
+</table>
+<p class="muted small">
+  为什么尾部要放一个"不认的字符"？因为 ——
+  <strong>匹配成功的时候它不会慢，匹配失败的时候才要试遍所有可能。</strong>
+</p>
+<p class="muted small">
+  从短到长一点点加，盯着上面那个耗时看。注意它是怎么增长的：
+  每加 2 个字符，时间大约 ×4 —— <strong>这就是"指数"的样子。</strong>
+</p>
+
+<h2>为什么这件事跟"输入太大"完全不一样</h2>
+<ul>
+  <li>输入<strong>很小</strong> —— 任何请求体大小限制都拦不住</li>
+  <li>一次请求占住一个线程好几分钟 —— 几个并发就能把服务打瘫</li>
+  <li>而且它<strong>看起来就是正常业务请求</strong>（只是一个标签列表）</li>
+</ul>
+<p class="muted small">
+  所以 ReDoS 经常被忽略：大家审的是"输入有没有注入"，
+  很少有人审"这条正则会不会爆炸"。
+</p>
+
+<h2>怎么修（安全写法在这里）</h2>
+<table class="findings">
+  <thead><tr><th>危险写法</th><th>安全写法</th></tr></thead>
+  <tbody>
+    <tr><th class="mono">^(\w+\s?)*$</th><td class="mono">{{ safe_pattern }}</td></tr>
+    <tr><th class="mono">^(a+)+$</th><td class="mono">^a+$</td></tr>
+    <tr><th class="mono">^(a|a)+$</th><td class="mono">^a+$</td></tr>
+  </tbody>
+</table>
+<p class="muted small">
+  规律：<strong>别让"匹配一个东西"这件事有多种等价切法。</strong>
+  把可空的部分（<span class="mono">\s?</span>）拿掉，改成
+  "必须出现的分隔符 + 词"，歧义就消失了。
+</p>
+<p class="muted small">
+  第二条：<strong>给输入设长度上限</strong>。指数是"长度 ×2 → 时间 ×4"，
+  所以长度上限的效果是<strong>指数级</strong>的。
+</p>
+{% endblock %}
