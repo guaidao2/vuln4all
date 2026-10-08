@@ -1,16 +1,28 @@
 # vuln4all
 
 **模块化 Web 漏洞靶场。丢一个模块进去，就多一道题。**
+**A modular web vulnerability range. Drop a module in, get a new challenge.**
 
 像 Metasploit 那样：你不用改 core、不用在注册表里登记、不用碰任何别人的文件。
 在 `modules/<分类>/<名字>/` 放一个 `module.py`，重启靶场，它就出现在首页清单里。
 
-作者：**guaidao2**
+Like Metasploit: you don't touch the core, you don't register anything in a table,
+and you don't edit anyone else's files. Drop a `module.py` into
+`modules/<category>/<name>/`, restart, and it shows up on the index page.
+
+作者 / Author：**guaidao2**
 
 想往里面加一道题，看 **[模块开发指南](docs/DEVELOPMENT.md)**。
+To add a challenge, see the **[module development guide](docs/DEVELOPMENT.md)**.
 
 > **注意：这是故意留洞的靶场。只在本机或隔离的虚拟机里跑。**
 > 绝不要暴露到公网、生产网络，或者任何你能被别人访问到的地址。
+>
+> **Warning: this range contains deliberate vulnerabilities. Run it locally, or in an
+> isolated VM. Never expose it to the public internet, a production network, or any
+> address other people can reach.**
+
+（本文档其余部分为中文。 / The rest of this document is in Chinese.）
 
 ---
 

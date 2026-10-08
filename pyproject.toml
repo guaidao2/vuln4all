@@ -5,12 +5,29 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "vuln4all"
 version = "0.1.0"
-description = "模块化 Web 漏洞靶场 —— 丢一个模块进去，就多一道题"
+description = "模块化 Web 漏洞靶场 —— 丢一个模块进去，就多一道题 / A modular web vulnerability range — drop a module in, get a new challenge"
 readme = "README.md"
 requires-python = ">=3.9"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "guaidao2" }]
+keywords = [
+    "web-security",
+    "security-education",
+    "vulnerable-web-app",
+    "penetration-testing",
+    "security-training",
+    "ctf",
+    "flask",
+    "python",
+    "sql-injection",
+    "xss",
+    "csrf",
+    "ssrf",
+    "xxe",
+    "ssti",
+    "owasp-top-10",
+]
 dependencies = [
     "Flask>=2.2",
 ]
