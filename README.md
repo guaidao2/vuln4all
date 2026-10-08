@@ -1,5 +1,7 @@
 # vuln4all
 
+**中文** · [English](README.en.md)
+
 **模块化 Web 漏洞靶场。丢一个模块进去，就多一道题。**
 **A modular web vulnerability range. Drop a module in, get a new challenge.**
 

@@ -1057,7 +1057,8 @@ PATTERNS = [
     (re.compile(r"--password[ \t]+[^\s<]"), "明文口令参数"),
 ]
 
-targets = [pathlib.Path("README.md")]
+# 两份 README 都是面向别人的文档，都要扫（含以后可能加的 README.xx.md）
+targets = sorted(pathlib.Path(".").glob("README*.md"))
 docs = pathlib.Path("docs")
 if docs.is_dir():
     targets.extend(sorted(docs.rglob("*.md")))
@@ -1077,6 +1078,78 @@ for item in hits[:5]:
 PY
 )
 expect_has "文档里没有内网地址 / 明文口令" "LEAK_COUNT=0" "$leak"
+
+# 题目清单在两个 README 里各有一份，而且是人工维护的 —— 加了一道题忘了改其中
+# 一份，两份就会各说各话。所以拿它们跟"core 实际加载到的模块"三方对齐。
+# 顺手也盯住 README.en.md 里写死的题目数/分类数，免得那个数字悄悄过期。
+sync=$(python3 - <<'PY'
+import json, pathlib, re, subprocess
+
+# 表格行的形状：| 入门 | `sqli/login_bypass` | 业务场景 | 洞在哪 |
+ROW = re.compile(r"^\|\s*(?:入门|进阶|困难)\s*\|\s*`([^`]+)`\s*\|", re.M)
+# 英文 README 里那句"N challenges across M categories"
+COUNT_CLAIM = re.compile(r"(\d+)\s+challenges?\s+across\s+(\d+)\s+categories")
+# 目录树里 modules/ 那一段的条目：│   ├── sqli/login_bypass/
+TREE_ROW = re.compile(r"^\s*[│├└─\s]*([a-z_][a-z0-9_]*/[a-z_][a-z0-9_]*)/", re.M)
+
+raw = subprocess.run(["python3", "main.py", "check", "--json"],
+                     capture_output=True, text=True, check=True).stdout
+real = {m["id"] for m in json.loads(raw[raw.index("{"):])["modules"]}
+real_categories = {i.split("/")[0] for i in real}
+
+problems = []
+for name in ("README.md", "README.en.md"):
+    path = pathlib.Path(name)
+    if not path.is_file():
+        problems.append("%s 不存在" % name)
+        continue
+    text = path.read_text(encoding="utf-8")
+    ids = ROW.findall(text)
+    if len(ids) != len(set(ids)):
+        problems.append("%s 的题目表里有重复行" % name)
+    listed = set(ids)
+    missing, extra = sorted(real - listed), sorted(listed - real)
+    if missing:
+        problems.append("%s 少列了 %d 道：%s" % (name, len(missing), ", ".join(missing[:4])))
+    if extra:
+        problems.append("%s 多列了 %d 道（modules/ 里没有）：%s"
+                        % (name, len(extra), ", ".join(extra[:4])))
+    # 同一句话在文档里可能出现多次（章节里一次、目录树注释里一次），
+    # 所以先去重 —— 否则同一条事实会被报好几遍，读的人反而看不清。
+    claims = COUNT_CLAIM.findall(text)
+    if claims:
+        nums = sorted({int(a) for a, _ in claims})
+        cats = sorted({int(b) for _, b in claims})
+        if nums != [len(real)]:
+            problems.append("%s 写着的题目数是 %s，实际 %d 道"
+                            % (name, "/".join(str(x) for x in nums), len(real)))
+        if cats != [len(real_categories)]:
+            problems.append("%s 写着的分类数是 %s，实际 %d 个"
+                            % (name, "/".join(str(x) for x in cats), len(real_categories)))
+
+    # 目录树里 modules/ 那一段也是一份清单。README.md 那份是完整的；
+    # 英文件那份是缩写的，用 ... 标了省略 —— 所以它只查"列出来的都得是真模块"，
+    # 不查有没有漏（缩写版本来就该漏）。
+    parts = text.split("── modules/")
+    if len(parts) > 1:
+        block = parts[1].split("── tools/")[0]
+        tree = set(TREE_ROW.findall(block))
+        if not re.search(r"^\s*[│├└─\s]*\.\.\.", block, re.M):
+            gone = sorted(real - tree)
+            if gone:
+                problems.append("%s 的目录树里漏了 %d 道：%s"
+                                % (name, len(gone), ", ".join(gone[:4])))
+        bogus_tree = sorted(tree - real)
+        if bogus_tree:
+            problems.append("%s 的目录树里列了 modules/ 里没有的：%s"
+                            % (name, ", ".join(bogus_tree[:4])))
+
+print("SYNC_COUNT=%d" % len(problems))
+for item in problems[:6]:
+    print("  " + item)
+PY
+)
+expect_has "两份 README 的题目清单跟实际模块一致" "SYNC_COUNT=0" "$sync"
 
 step "13. 深度阶梯：同一分类下的第二、第三道题"
 
